@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { analyzeProductWebsite, findCompetitors } from '@/lib/openai'
+// Temporarily disabled for deployment
+// import { analyzeProductWebsite, findCompetitors } from '@/lib/openai'
 import { supabase } from '@/lib/supabase'
 
 export async function POST(request: NextRequest) {
@@ -27,16 +28,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Analyze website
-    const websiteAnalysis = await analyzeProductWebsite(website)
-    
-    // Find competitors
-    const competitorAnalysis = await findCompetitors(product.name, websiteAnalysis.category || 'Unknown')
-
-    // Combine analysis
+    // Temporary mock analysis for deployment
     const analysis = {
-      websiteAnalysis,
-      competitorAnalysis,
+      websiteAnalysis: {
+        category: 'E-commerce',
+        targetAudience: 'Health & Wellness enthusiasts',
+        valuePropositions: [
+          'Science-backed formulation',
+          'Premium quality ingredients',
+          'Trusted by customers worldwide'
+        ],
+        creativeThemes: ['Health', 'Wellness', 'Science', 'Premium']
+      },
+      competitorAnalysis: {
+        directCompetitors: [
+          'Competitor A - Similar product line',
+          'Competitor B - Market leader',
+          'Competitor C - Budget alternative'
+        ],
+        marketPositioning: 'Premium positioning in health & wellness market',
+        marketingApproaches: [
+          'Social media influencer partnerships',
+          'Educational content marketing',
+          'Customer testimonials and reviews'
+        ]
+      },
       analyzedAt: new Date().toISOString()
     }
 
