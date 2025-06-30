@@ -1,6 +1,8 @@
 # AdForge Pro - Facebook Ads Analytics Dashboard
 
-A comprehensive AI-powered Facebook ads analytics and performance tracking platform built with Next.js, Supabase, and OpenAI.
+🚀 **Status: Authentication Working** - NextAuth with Google OAuth configured for both local and production environments.
+
+AI-Powered Facebook Ads Analytics and Performance Tracking platform built for performance marketers.
 
 ## Features
 
@@ -37,6 +39,26 @@ A comprehensive AI-powered Facebook ads analytics and performance tracking platf
 - **File Processing**: PapaParse for CSV handling
 - **UI Components**: Headless UI, Heroicons, React Hook Form
 - **Charts**: Recharts for data visualization
+
+## Environment Setup
+
+Required environment variables:
+- `GOOGLE_CLIENT_ID` - Google OAuth client ID
+- `GOOGLE_CLIENT_SECRET` - Google OAuth client secret  
+- `NEXTAUTH_SECRET` - NextAuth encryption secret
+- `NEXTAUTH_URL` - Application URL (localhost for dev, Vercel URL for prod)
+
+## Deployment
+
+- **Local:** `npm run dev` at `http://localhost:3000`
+- **Production:** Deployed on Vercel at `https://facebook-ads-dashboard-drab.vercel.app`
+
+## Authentication Flow
+
+1. Homepage with "Sign In With Google" buttons
+2. Google OAuth authentication
+3. Automatic redirect to dashboard upon successful login
+4. Protected dashboard routes with session management
 
 ## Getting Started
 
