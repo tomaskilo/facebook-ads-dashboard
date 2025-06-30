@@ -5,7 +5,7 @@ import { Dialog } from '@headlessui/react'
 import { XMarkIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline'
 import { useDropzone } from 'react-dropzone'
 import Papa from 'papaparse'
-import { supabase } from '@/lib/supabase'
+// import { supabase } from '@/lib/supabase' // Temporarily disabled - migrating to NextAuth
 import { CSVUploadData } from '@/types'
 
 interface AddProductModalProps {
@@ -72,63 +72,11 @@ export default function AddProductModal({ isOpen, onClose }: AddProductModalProp
     setError('')
 
     try {
-      // Create product
-      const { data: product, error: productError } = await supabase
-        .from('products')
-        .insert({
-          name: productData.name,
-          category_id: productData.category,
-          website: productData.website,
-          naming_convention: productData.namingConvention
-        })
-        .select()
-        .single()
-
-      if (productError) throw productError
-
-      // Process and insert ads data
-      if (csvData.length > 0) {
-        const weekMatch = csvFileName.match(/W(\d+)/)
-        const weekNumber = weekMatch ? parseInt(weekMatch[1]) : 1
-
-        const adsData = csvData.map(row => {
-          // Parse naming convention
-          const isCreativeHub = row.adName.includes('_chub_')
-          const aspectRatio = row.adName.match(/_(\d+x\d+)_/)?.[1] || ''
-          const adFormat = row.adName.includes('_IMG_') ? 'IMG' : row.adName.includes('_VIDEO_') ? 'VIDEO' : ''
-          const adType = row.adName.includes('_New_') ? 'New' : row.adName.includes('_Opti_') ? 'Opti' : ''
-          
-          // Determine creative type if empty
-          let creativeType = row.creativeType
-          if (!creativeType) {
-            creativeType = adFormat === 'VIDEO' ? 'VIDEO' : 'SHARE'
-          }
-
-          return {
-            product_id: product.id,
-            ad_name: row.adName,
-            adset_name: row.adsetName,
-            creative_type: creativeType as 'SHARE' | 'VIDEO',
-            spend_usd: row.spendUsd,
-            impressions: row.impressions,
-            first_ad_spend_date: row.firstAdSpendDate,
-            last_ad_spend_date: row.lastAdSpendDate,
-            days_ad_spending: row.daysAdSpending,
-            week_number: weekNumber,
-            is_creative_hub: isCreativeHub,
-            aspect_ratio: aspectRatio,
-            ad_format: adFormat as 'IMG' | 'VIDEO',
-            ad_type: adType as 'New' | 'Opti'
-          }
-        })
-
-        const { error: adsError } = await supabase
-          .from('ads')
-          .insert(adsData)
-
-        if (adsError) throw adsError
-      }
-
+      // TODO: Implement with NextAuth + Database of choice
+      // Temporarily showing success message instead of database operations
+      
+      alert(`Product "${productData.name}" would be created with ${csvData.length} ads. Database functionality temporarily disabled during migration to NextAuth.`)
+      
       onClose()
       setStep(1)
       setProductData({ name: '', category: '', website: '', namingConvention: '' })
