@@ -1,35 +1,67 @@
 import OpenAI from 'openai'
-import * as cheerio from 'cheerio'
-import axios from 'axios'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-export async function analyzeProductWebsite(url: string) {
+// Simplified web scraping without cheerio
+async function scrapeWebsiteContent(url: string) {
   try {
-    // Scrape website content
-    const response = await axios.get(url, {
+    const response = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
       }
     })
     
-    const $ = cheerio.load(response.data)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
     
-    // Extract relevant content
-    const title = $('title').text()
-    const description = $('meta[name="description"]').attr('content') || ''
-    const h1 = $('h1').first().text()
-    const h2Elements = $('h2').map((i, el) => $(el).text()).get().slice(0, 5)
-    const paragraphs = $('p').map((i, el) => $(el).text()).get().slice(0, 10).join(' ')
+    const html = await response.text()
+    
+    // Extract content using regex patterns
+    const title = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || ''
+    const description = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i)?.[1] || ''
+    
+    // Extract headings
+    const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i)
+    const h1 = h1Match?.[1] || ''
+    
+    const h2Matches = html.match(/<h2[^>]*>([^<]+)<\/h2>/gi) || []
+    const h2Elements = h2Matches.slice(0, 5).map(match => 
+      match.replace(/<[^>]*>/g, '').trim()
+    )
+    
+    // Extract some paragraph content
+    const pMatches = html.match(/<p[^>]*>([^<]+)<\/p>/gi) || []
+    const paragraphs = pMatches.slice(0, 10).map(match => 
+      match.replace(/<[^>]*>/g, '').trim()
+    ).join(' ')
+    
+    return {
+      title: title.trim(),
+      description: description.trim(),
+      h1: h1.trim(),
+      h2Elements,
+      content: paragraphs.substring(0, 2000)
+    }
+  } catch (error) {
+    console.error('Error scraping website:', error)
+    throw new Error('Failed to scrape website content')
+  }
+}
+
+export async function analyzeProductWebsite(url: string) {
+  try {
+    // Scrape website content using simplified approach
+    const scrapedData = await scrapeWebsiteContent(url)
     
     const content = `
-    Title: ${title}
-    Description: ${description}
-    Main Heading: ${h1}
-    Subheadings: ${h2Elements.join(', ')}
-    Content: ${paragraphs.substring(0, 2000)}
+    Title: ${scrapedData.title}
+    Description: ${scrapedData.description}
+    Main Heading: ${scrapedData.h1}
+    Subheadings: ${scrapedData.h2Elements.join(', ')}
+    Content: ${scrapedData.content}
     `
     
     // Analyze with OpenAI

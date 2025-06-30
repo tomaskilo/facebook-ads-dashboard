@@ -31,13 +31,13 @@
     @apply border-gray-200;
   }
   body {
-    @apply bg-dark-900 text-white;
+    @apply bg-slate-900 text-white;
   }
 }
 
 /* Custom styles for dashboard */
 .dashboard-card {
-  @apply bg-dark-800 border border-dark-700 rounded-lg p-6;
+  @apply bg-slate-800 border border-slate-700 rounded-lg p-6;
 }
 
 .sidebar-item {
@@ -45,21 +45,21 @@
 }
 
 .sidebar-item-active {
-  @apply bg-primary-600 text-white;
+  @apply bg-blue-600 text-white;
 }
 
 .sidebar-item-inactive {
-  @apply text-dark-300 hover:bg-dark-700 hover:text-white;
+  @apply text-slate-300 hover:bg-slate-700 hover:text-white;
 }
 
 .metric-card {
-  @apply bg-dark-800 border border-dark-700 rounded-lg p-4;
+  @apply bg-slate-800 border border-slate-700 rounded-lg p-4;
 }
 
 .btn-primary {
-  @apply bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded-md transition-colors;
+  @apply bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors;
 }
 
 .btn-secondary {
-  @apply bg-dark-700 hover:bg-dark-600 text-white font-medium py-2 px-4 rounded-md transition-colors;
+  @apply bg-slate-700 hover:bg-slate-600 text-white font-medium py-2 px-4 rounded-md transition-colors;
 } 

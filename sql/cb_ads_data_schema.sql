@@ -50,21 +50,24 @@ CREATE TRIGGER update_cb_ads_data_updated_at
 -- Add Row Level Security (RLS) 
 ALTER TABLE cb_ads_data ENABLE ROW LEVEL SECURITY;
 
--- Create policy to allow authenticated users to read data
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Allow authenticated users to read cb_ads_data" ON cb_ads_data;
+DROP POLICY IF EXISTS "Allow authenticated users to insert cb_ads_data" ON cb_ads_data;
+DROP POLICY IF EXISTS "Allow authenticated users to update cb_ads_data" ON cb_ads_data;
+DROP POLICY IF EXISTS "Allow authenticated users to delete cb_ads_data" ON cb_ads_data;
+
+-- Create policies for NextAuth (using auth.uid() instead of auth.role())
 CREATE POLICY "Allow authenticated users to read cb_ads_data" ON cb_ads_data
-    FOR SELECT USING (auth.role() = 'authenticated');
+    FOR SELECT USING (auth.uid() IS NOT NULL);
 
--- Create policy to allow authenticated users to insert data
 CREATE POLICY "Allow authenticated users to insert cb_ads_data" ON cb_ads_data
-    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+    FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
--- Create policy to allow authenticated users to update data
 CREATE POLICY "Allow authenticated users to update cb_ads_data" ON cb_ads_data
-    FOR UPDATE USING (auth.role() = 'authenticated');
+    FOR UPDATE USING (auth.uid() IS NOT NULL);
 
--- Create policy to allow authenticated users to delete data
 CREATE POLICY "Allow authenticated users to delete cb_ads_data" ON cb_ads_data
-    FOR DELETE USING (auth.role() = 'authenticated');
+    FOR DELETE USING (auth.uid() IS NOT NULL);
 
 -- Create a view for weekly summary statistics
 CREATE OR REPLACE VIEW cb_weekly_summary AS

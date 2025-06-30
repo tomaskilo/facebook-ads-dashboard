@@ -1,0 +1,97 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { createServiceSupabaseClient } from '@/lib/supabase-client'
+import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+
+export async function GET(request: NextRequest) {
+  try {
+    // Check authentication
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const supabase = createServiceSupabaseClient()
+
+    // Get all ads data for scaling calculation (only 2025 ads)
+    const { data: allAdsData, error: allAdsError } = await supabase
+      .from('cb_ads_data')
+      .select('*')
+      .eq('year_created', 2025)
+      .order('spend_usd', { ascending: false })
+
+    if (allAdsError) {
+      throw new Error(`Failed to fetch ads data: ${allAdsError.message}`)
+    }
+
+    // Group by ad_name and calculate total spend
+    const adGroups = allAdsData?.reduce((acc, ad) => {
+      if (!acc[ad.ad_name]) {
+        acc[ad.ad_name] = {
+          ad_name: ad.ad_name,
+          total_spend: 0,
+          impressions: 0,
+          days_running: ad.days_running,
+          last_ad_spend_date: ad.last_ad_spend_date,
+          first_ad_spend_date: ad.first_ad_spend_date,
+          creative_type: ad.creative_type,
+          creative_hub: ad.is_creative_hub === 1,
+          aspect_ratio: ad.aspect_ratio,
+          weeks: []
+        }
+      }
+      
+      acc[ad.ad_name].total_spend += ad.spend_usd || 0
+      acc[ad.ad_name].impressions += ad.impressions || 0
+      acc[ad.ad_name].weeks.push(ad.week_number)
+      
+      // Keep the latest data for other fields
+      if (new Date(ad.last_ad_spend_date) > new Date(acc[ad.ad_name].last_ad_spend_date)) {
+        acc[ad.ad_name].days_running = ad.days_running
+        acc[ad.ad_name].last_ad_spend_date = ad.last_ad_spend_date
+        acc[ad.ad_name].creative_type = ad.creative_type
+        acc[ad.ad_name].creative_hub = ad.is_creative_hub === 1
+        acc[ad.ad_name].aspect_ratio = ad.aspect_ratio
+      }
+      
+      return acc
+    }, {} as Record<string, any>) || {}
+
+    // Filter scaled ads (>$1000 total spend) and add calculated metrics
+    const scaledAds = Object.values(adGroups)
+      .filter((ad: any) => ad.total_spend > 1000)
+      .map((ad: any) => {
+        // Calculate mock ROAS based on spend
+        const mockRoas = ad.total_spend > 2000 ? 
+          (4.5 + Math.random() * 1.5) : // 4.5-6.0x for high spend
+          (3.0 + Math.random() * 1.5) // 3.0-4.5x for medium spend
+
+        // Determine status based on last spend date
+        const lastSpendDate = new Date(ad.last_ad_spend_date)
+        const daysSinceLastSpend = Math.floor((Date.now() - lastSpendDate.getTime()) / (1000 * 60 * 60 * 24))
+        const isActive = daysSinceLastSpend <= 7 && ad.days_running > 0
+
+        return {
+          ad_name: ad.ad_name,
+          total_spend: ad.total_spend,
+          impressions: ad.impressions,
+          days_running: ad.days_running,
+          creative_type: ad.creative_type,
+          creative_hub: ad.creative_hub,
+          aspect_ratio: ad.aspect_ratio,
+          roas: parseFloat(mockRoas.toFixed(1)),
+          status: isActive ? 'Active' : 'Paused',
+          weeks_active: Array.from(new Set(ad.weeks)).sort(),
+          first_ad_spend_date: ad.first_ad_spend_date,
+          last_ad_spend_date: ad.last_ad_spend_date
+        }
+      })
+      .sort((a, b) => b.total_spend - a.total_spend) // Sort by spend descending
+
+    return NextResponse.json({ scaledAds })
+
+  } catch (error) {
+    console.error('Colonbroom scaled ads API error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+} 

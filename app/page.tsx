@@ -5,20 +5,35 @@ import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 
 export default function Home() {
-  const { data: session } = useSession()
+  const { data: session, status } = useSession()
   const router = useRouter()
 
   useEffect(() => {
     if (session) {
-      router.push('/dashboard')
+      router.push('/dashboard/products/colonbroom')
     }
   }, [session, router])
 
-  const handleSignIn = () => {
-    signIn('google')
+  const handleSignIn = async () => {
+    try {
+      await signIn('google', { callbackUrl: '/dashboard/products/colonbroom' })
+    } catch (error) {
+      console.error('Sign in error:', error)
+    }
   }
 
-  // Always show the landing page - don't wait for session loading
+  // Show loading state while checking session
+  if (!session && status !== 'unauthenticated') {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-xl">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-slate-900 text-white">
       {/* Header */}

@@ -2,16 +2,9 @@
 
 import { useState } from 'react'
 import { Dialog } from '@headlessui/react'
-import { XMarkIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline'
+import { XMarkIcon, CloudArrowUpIcon, CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import { useDropzone } from 'react-dropzone'
 import Papa from 'papaparse'
-import { createClient } from '@supabase/supabase-js'
-
-// Temporary Supabase client - will be properly configured
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
 
 interface UploadDataModalProps {
   onClose: () => void
@@ -33,11 +26,20 @@ interface ParsedAdData {
   week_number: string
 }
 
+interface FileUploadStatus {
+  file: File
+  status: 'pending' | 'processing' | 'success' | 'error'
+  weekNumber: string
+  message?: string
+  recordsCount?: number
+}
+
 export default function UploadDataModal({ onClose }: UploadDataModalProps) {
+  const [files, setFiles] = useState<FileUploadStatus[]>([])
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
   const [dragActive, setDragActive] = useState(false)
+  const [overallProgress, setOverallProgress] = useState(0)
 
   // Extract week number from filename (e.g., "CB W01.csv" -> "W01")
   const extractWeekNumber = (filename: string): string => {
@@ -141,114 +143,216 @@ export default function UploadDataModal({ onClose }: UploadDataModalProps) {
     })
   }
 
-  // Check for duplicate week data
-  const checkDuplicateWeek = async (weekNumber: string): Promise<boolean> => {
-    const { data, error } = await supabase
-      .from('cb_ads_data')
-      .select('week_number')
-      .eq('week_number', weekNumber)
-      .limit(1)
+  // Upload data via API
+  const uploadViaAPI = async (parsedData: ParsedAdData[], weekNumber: string) => {
+    const response = await fetch('/api/upload-csv', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        csvData: parsedData,
+        weekNumber: weekNumber
+      }),
+    })
 
-    if (error) {
-      console.error('Error checking duplicates:', error)
-      return false
+    const result = await response.json()
+
+    if (!response.ok) {
+      throw new Error(result.error || 'Upload failed')
     }
 
-    return data && data.length > 0
+    return result
   }
 
-  // Upload data to Supabase
-  const uploadToDatabase = async (parsedData: ParsedAdData[]) => {
-    const { error } = await supabase
-      .from('cb_ads_data')
-      .insert(parsedData)
-
-    if (error) {
-      throw new Error(`Database error: ${error.message}`)
-    }
+  // Update file status
+  const updateFileStatus = (index: number, updates: Partial<FileUploadStatus>) => {
+    setFiles(prev => prev.map((file, i) => 
+      i === index ? { ...file, ...updates } : file
+    ))
   }
 
-  const onDrop = async (acceptedFiles: File[]) => {
-    const file = acceptedFiles[0]
-    if (!file) return
+  // Process a single file
+  const processFile = async (fileStatus: FileUploadStatus, index: number): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      updateFileStatus(index, { status: 'processing' })
 
-    // Validate file type
-    if (!file.name.toLowerCase().endsWith('.csv')) {
-      setError('Please upload a CSV file.')
-      return
-    }
-
-    // Validate filename format (must start with CB)
-    if (!file.name.toLowerCase().startsWith('cb')) {
-      setError('File must be a Colonbroom CSV file (starting with CB).')
-      return
-    }
-
-    const weekNumber = extractWeekNumber(file.name)
-    if (!weekNumber) {
-      setError('Could not extract week number from filename. Please use format: CB W01.csv')
-      return
-    }
-
-    setUploading(true)
-    setError('')
-    setSuccess('')
-
-    try {
-      // Check for duplicate week
-      const isDuplicate = await checkDuplicateWeek(weekNumber)
-      if (isDuplicate) {
-        throw new Error(`Week ${weekNumber} data already exists in the database. Please choose a different week or delete existing data first.`)
-      }
-
-      // Parse CSV
-      Papa.parse(file, {
-        complete: async (result) => {
+      Papa.parse(fileStatus.file, {
+        complete: async (parseResult) => {
           try {
-            const parsedData = parseCSVData(result.data, weekNumber)
+            const parsedData = parseCSVData(parseResult.data, fileStatus.weekNumber)
             
-            // Upload to database
-            await uploadToDatabase(parsedData)
+            // Upload via API
+            const uploadResult = await uploadViaAPI(parsedData, fileStatus.weekNumber)
             
-            setSuccess(`Successfully uploaded ${parsedData.length} ads for week ${weekNumber}!`)
-            setTimeout(() => {
-              onClose()
-            }, 2000)
+            updateFileStatus(index, { 
+              status: 'success', 
+              message: uploadResult.message,
+              recordsCount: parsedData.length
+            })
+            resolve()
           } catch (err: any) {
-            setError(err.message)
-          } finally {
-            setUploading(false)
+            updateFileStatus(index, { 
+              status: 'error', 
+              message: err.message 
+            })
+            reject(err)
           }
         },
         error: (error) => {
-          setError(`CSV parsing error: ${error.message}`)
-          setUploading(false)
+          updateFileStatus(index, { 
+            status: 'error', 
+            message: `CSV parsing error: ${error.message}` 
+          })
+          reject(error)
         }
       })
-    } catch (err: any) {
-      setError(err.message)
-      setUploading(false)
+    })
+  }
+
+  // Process all files
+  const processAllFiles = async () => {
+    setUploading(true)
+    setError('')
+    setOverallProgress(0)
+
+    let completedFiles = 0
+    const totalFiles = files.length
+
+    // Process files sequentially to avoid overwhelming the server
+    for (let i = 0; i < files.length; i++) {
+      try {
+        await processFile(files[i], i)
+        completedFiles++
+        setOverallProgress((completedFiles / totalFiles) * 100)
+      } catch (err) {
+        // Continue with other files even if one fails
+        completedFiles++
+        setOverallProgress((completedFiles / totalFiles) * 100)
+      }
     }
+
+    setUploading(false)
+    
+    // Check if all files processed successfully
+    const successCount = files.filter(f => f.status === 'success').length
+    const errorCount = files.filter(f => f.status === 'error').length
+    
+    if (errorCount === 0) {
+      setTimeout(() => {
+        onClose()
+      }, 3000)
+    }
+  }
+
+  const onDrop = (acceptedFiles: File[]) => {
+    setError('')
+    
+    const newFiles: FileUploadStatus[] = acceptedFiles.map(file => {
+      // Validate file type
+      if (!file.name.toLowerCase().endsWith('.csv')) {
+        return {
+          file,
+          status: 'error' as const,
+          weekNumber: '',
+          message: 'File must be a CSV file'
+        }
+      }
+
+      // Validate filename format (must start with CB)
+      if (!file.name.toLowerCase().startsWith('cb')) {
+        return {
+          file,
+          status: 'error' as const,
+          weekNumber: '',
+          message: 'File must be a Colonbroom CSV file (starting with CB)'
+        }
+      }
+
+      const weekNumber = extractWeekNumber(file.name)
+      if (!weekNumber) {
+        return {
+          file,
+          status: 'error' as const,
+          weekNumber: '',
+          message: 'Could not extract week number from filename. Use format: CB W01.csv'
+        }
+      }
+
+      return {
+        file,
+        status: 'pending' as const,
+        weekNumber,
+        message: `Ready to upload ${weekNumber}`
+      }
+    })
+
+    // Check for duplicate week numbers
+    const weekNumbers = newFiles.map(f => f.weekNumber).filter(Boolean)
+    const duplicates = weekNumbers.filter((week, index) => weekNumbers.indexOf(week) !== index)
+    
+    if (duplicates.length > 0) {
+      setError(`Duplicate week numbers found: ${duplicates.join(', ')}. Please remove duplicate files.`)
+      return
+    }
+
+    // Check for duplicates with existing files
+    const existingWeeks = files.map(f => f.weekNumber)
+    const conflicts = weekNumbers.filter(week => existingWeeks.includes(week))
+    
+    if (conflicts.length > 0) {
+      setError(`Week numbers already added: ${conflicts.join(', ')}. Please remove duplicate files.`)
+      return
+    }
+
+    setFiles(prev => [...prev, ...newFiles])
+  }
+
+  const removeFile = (index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const clearAllFiles = () => {
+    setFiles([])
+    setError('')
+    setOverallProgress(0)
   }
 
   const { getRootProps, getInputProps } = useDropzone({
     onDrop,
     onDragEnter: () => setDragActive(true),
     onDragLeave: () => setDragActive(false),
+    onDragOver: (e: any) => e.preventDefault(),
     accept: {
       'text/csv': ['.csv'],
     },
-    maxFiles: 1,
+    multiple: true, // Enable multiple file selection
   })
+
+  const getStatusIcon = (status: FileUploadStatus['status']) => {
+    switch (status) {
+      case 'success':
+        return <CheckCircleIcon className="h-5 w-5 text-green-500" />
+      case 'error':
+        return <ExclamationTriangleIcon className="h-5 w-5 text-red-500" />
+      case 'processing':
+        return <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent" />
+      default:
+        return <div className="h-5 w-5 bg-gray-300 rounded-full" />
+    }
+  }
+
+  const validFiles = files.filter(f => f.status !== 'error')
+  const canStartUpload = validFiles.length > 0 && !uploading
 
   return (
     <Dialog open={true} onClose={onClose} className="relative z-50">
       <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
       <div className="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Panel className="mx-auto max-w-md bg-white rounded-lg shadow-lg">
+        <Dialog.Panel className="mx-auto max-w-2xl bg-white rounded-lg shadow-lg max-h-[90vh] overflow-hidden">
           <div className="flex items-center justify-between p-6 border-b">
             <Dialog.Title className="text-lg font-semibold text-gray-900">
-              Upload Colonbroom Data
+              Bulk Upload Colonbroom Data
             </Dialog.Title>
             <button
               onClick={onClose}
@@ -258,10 +362,11 @@ export default function UploadDataModal({ onClose }: UploadDataModalProps) {
             </button>
           </div>
 
-          <div className="p-6">
+          <div className="p-6 max-h-[70vh] overflow-y-auto">
+            {/* Dropzone */}
             <div
               {...getRootProps()}
-              className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+              className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors mb-6 ${
                 dragActive
                   ? 'border-blue-500 bg-blue-50'
                   : 'border-gray-300 hover:border-gray-400'
@@ -270,41 +375,119 @@ export default function UploadDataModal({ onClose }: UploadDataModalProps) {
               <input {...getInputProps()} />
               <CloudArrowUpIcon className="mx-auto h-12 w-12 text-gray-400 mb-4" />
               <p className="text-lg font-medium text-gray-900 mb-2">
-                Upload CSV File
+                Upload Multiple CSV Files
               </p>
               <p className="text-sm text-gray-600 mb-4">
-                Drag and drop your Colonbroom CSV file here, or click to browse
+                Drag and drop your Colonbroom CSV files here, or click to browse
               </p>
               <p className="text-xs text-gray-500">
-                Format: CB W01.csv, CB W12.csv, etc.
+                Format: CB W01.csv, CB W02.csv, etc. • Select up to 25 files
               </p>
             </div>
 
+            {/* Files List */}
+            {files.length > 0 && (
+              <div className="space-y-3 mb-6">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-gray-900">
+                    Selected Files ({files.length})
+                  </h3>
+                  <button
+                    onClick={clearAllFiles}
+                    className="text-xs text-gray-500 hover:text-gray-700"
+                    disabled={uploading}
+                  >
+                    Clear All
+                  </button>
+                </div>
+                
+                <div className="max-h-60 overflow-y-auto space-y-2">
+                  {files.map((fileStatus, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                    >
+                      <div className="flex items-center gap-3 flex-1">
+                        {getStatusIcon(fileStatus.status)}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {fileStatus.file.name}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {fileStatus.weekNumber && `Week: ${fileStatus.weekNumber} • `}
+                            {fileStatus.message}
+                            {fileStatus.recordsCount && ` • ${fileStatus.recordsCount} records`}
+                          </p>
+                        </div>
+                      </div>
+                      {!uploading && (
+                        <button
+                          onClick={() => removeFile(index)}
+                          className="text-gray-400 hover:text-red-500 ml-2"
+                        >
+                          <XMarkIcon className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Progress Bar */}
+            {uploading && (
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-gray-700">Upload Progress</span>
+                  <span className="text-sm text-gray-500">{Math.round(overallProgress)}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${overallProgress}%` }}
+                  ></div>
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            {files.length > 0 && (
+              <div className="flex gap-3">
+                <button
+                  onClick={processAllFiles}
+                  disabled={!canStartUpload}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  {uploading ? 'Uploading...' : `Upload ${validFiles.length} Files`}
+                </button>
+                {!uploading && (
+                  <button
+                    onClick={onClose}
+                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Error Message */}
             {error && (
               <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
                 {error}
               </div>
             )}
 
-            {success && (
-              <div className="mt-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
-                {success}
-              </div>
-            )}
-
-            {uploading && (
-              <div className="mt-4 p-3 bg-blue-100 border border-blue-400 text-blue-700 rounded">
-                Processing and uploading data...
-              </div>
-            )}
-
+            {/* Instructions */}
             <div className="mt-6 text-xs text-gray-600">
-              <h4 className="font-semibold mb-2">File Requirements:</h4>
+              <h4 className="font-semibold mb-2">Bulk Upload Instructions:</h4>
               <ul className="space-y-1">
-                <li>• File must start with "CB" (Colonbroom)</li>
-                <li>• Include week number: CB W01.csv, CB W12.csv</li>
-                <li>• Standard CSV format with 9 columns</li>
-                <li>• Will automatically detect Creative Hub, year/month, aspect ratio</li>
+                <li>• Select multiple CSV files at once (Ctrl/Cmd + click)</li>
+                <li>• Each file must start with "CB" (Colonbroom)</li>
+                <li>• Include week number: CB W01.csv, CB W02.csv, etc.</li>
+                <li>• Files will be processed sequentially</li>
+                <li>• Duplicate week numbers will be rejected</li>
+                <li>• Standard CSV format with 9 columns required</li>
               </ul>
             </div>
           </div>

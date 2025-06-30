@@ -160,7 +160,10 @@ export default function Sidebar() {
       </div>
       
       {showAddProductModal && (
-        <AddProductModal onClose={() => setShowAddProductModal(false)} />
+        <AddProductModal 
+          isOpen={showAddProductModal}
+          onClose={() => setShowAddProductModal(false)} 
+        />
       )}
       {showUploadDataModal && (
         <UploadDataModal onClose={() => setShowUploadDataModal(false)} />
