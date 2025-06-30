@@ -2,8 +2,8 @@ import './globals.css'
 import { Providers } from './providers'
 
 export const metadata = {
-  title: 'AdForge Pro - Facebook Ads Analytics Dashboard',
-  description: 'AI-Powered Facebook Ads Analytics and Performance Tracking',
+  title: 'Toka Analysis - Facebook Ads Data Management',
+  description: 'Advanced Facebook ads data analysis and management platform for Colonbroom and other products.',
 }
 
 export default function RootLayout({
