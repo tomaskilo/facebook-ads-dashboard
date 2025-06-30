@@ -1,5 +1,5 @@
 import './globals.css'
-import SessionProvider from '@/components/SessionProvider'
+import { Providers } from './providers'
 
 export const metadata = {
   title: 'AdForge Pro - Facebook Ads Analytics Dashboard',
@@ -14,9 +14,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-slate-900 text-white min-h-screen">
-        <SessionProvider>
+        <Providers>
           {children}
-        </SessionProvider>
+        </Providers>
       </body>
     </html>
   )

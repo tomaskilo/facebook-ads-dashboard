@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 
 export default function Home() {
-  const { data: session } = useSession()
+  const { data: session, status } = useSession()
   const router = useRouter()
 
   useEffect(() => {
@@ -13,6 +13,17 @@ export default function Home() {
       router.push('/dashboard')
     }
   }, [session, router])
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-xl">Loading...</p>
+        </div>
+      </div>
+    )
+  }
 
   const handleSignIn = () => {
     signIn('google')

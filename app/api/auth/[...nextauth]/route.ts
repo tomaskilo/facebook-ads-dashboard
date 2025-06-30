@@ -18,8 +18,12 @@ const handler = NextAuth({
   },
   pages: {
     signIn: '/',
-    error: '/',
-  }
+    error: '/?error=auth_error',
+  },
+  debug: process.env.NODE_ENV === 'development',
+  session: {
+    strategy: 'jwt',
+  },
 })
 
 export { handler as GET, handler as POST } 
