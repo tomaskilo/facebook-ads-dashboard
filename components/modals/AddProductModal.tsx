@@ -27,10 +27,11 @@ export default function AddProductModal({ isOpen, onClose }: AddProductModalProp
   const [error, setError] = useState('')
 
   const categories = [
-    'E-Commerce',
-    'E-com Accelerator', 
-    'WMA',
-    'Go Health'
+    'Digestive Health',
+    'Weight Loss',
+    'General Health',
+    'Beauty & Skincare',
+    'Fitness & Nutrition'
   ]
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({

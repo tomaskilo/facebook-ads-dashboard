@@ -7,56 +7,30 @@ import { useSession, signOut } from 'next-auth/react'
 import {
   ChartBarIcon,
   ChartPieIcon,
-  UsersIcon,
   SwatchIcon,
   CogIcon,
-  FolderIcon,
   PlusIcon
 } from '@heroicons/react/24/outline'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: ChartBarIcon },
   { name: 'Analytics', href: '/dashboard/analytics', icon: ChartPieIcon },
-  { name: 'Competitors', href: '/dashboard/competitors', icon: UsersIcon },
   { name: 'Creative Studio', href: '/dashboard/creative-studio', icon: SwatchIcon },
-  { name: 'Brand Assets', href: '/dashboard/brand-assets', icon: FolderIcon },
-  { name: 'Product Assets', href: '/dashboard/product-assets', icon: FolderIcon },
-  { name: 'Naming', href: '/dashboard/naming', icon: CogIcon },
-  { name: 'API Connections', href: '/dashboard/api-connections', icon: CogIcon },
-  { name: 'Overall Metrics', href: '/dashboard/overall-metrics', icon: ChartBarIcon },
 ]
 
+// Current products - we'll expand this as more products are added
 const products = [
-  { name: 'Ecommerce', children: [
-    { name: 'Rhea', href: '/dashboard/products/rhea' },
-    { name: 'Colourform', href: '/dashboard/products/colourform' },
-    { name: 'Moerie', href: '/dashboard/products/moerie' },
-    { name: 'Bioma', href: '/dashboard/products/bioma' },
-  ]},
-  { name: 'Ecom Accelerator', children: [
-    { name: 'Hot Bodhi', href: '/dashboard/products/hot-bodhi' },
-    { name: 'Burnbok', href: '/dashboard/products/burnbok' },
-  ]},
-  { name: 'Go Health', children: [
-    { name: 'Cardi Health', href: '/dashboard/products/cardi-health' },
-    { name: 'My Body', href: '/dashboard/products/my-body' },
-  ]},
-  { name: 'WMA', children: [
-    { name: 'Kure', href: '/dashboard/products/kure' },
-    { name: 'Her Hypnosis', href: '/dashboard/products/her-hypnosis' },
-    { name: 'Perfect Body', href: '/dashboard/products/perfect-body' },
-    { name: 'No Carbs Challenge', href: '/dashboard/products/no-carbs-challenge' },
-  ]},
+  {
+    name: 'Colonbroom',
+    href: '/dashboard/products/colonbroom',
+    category: 'Digestive Health',
+    status: 'active'
+  }
 ]
 
 export default function Sidebar() {
   const pathname = usePathname()
   const { data: session } = useSession()
-  const [expandedCategory, setExpandedCategory] = useState<string | null>('Ecommerce')
-
-  const toggleCategory = (categoryName: string) => {
-    setExpandedCategory(expandedCategory === categoryName ? null : categoryName)
-  }
 
   return (
     <div className="w-64 bg-dark-800 h-screen flex flex-col">
@@ -100,35 +74,29 @@ export default function Sidebar() {
             </div>
           </div>
 
-          {products.map((category) => (
-            <div key={category.name}>
-              <button
-                onClick={() => toggleCategory(category.name)}
-                className="w-full sidebar-item sidebar-item-inactive justify-between"
-              >
-                <span>{category.name}</span>
-                <span className={`transform transition-transform ${
-                  expandedCategory === category.name ? 'rotate-90' : ''
-                }`}>▶</span>
-              </button>
-              
-              {expandedCategory === category.name && (
-                <div className="ml-4 space-y-1">
-                  {category.children.map((product) => (
-                    <Link
-                      key={product.name}
-                      href={product.href}
-                      className={`sidebar-item text-sm ${
-                        pathname === product.href ? 'sidebar-item-active' : 'sidebar-item-inactive'
-                      }`}
-                    >
-                      {product.name}
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+          {/* Current Products */}
+          <div className="space-y-1">
+            {products.map((product) => {
+              const isActive = pathname === product.href
+              return (
+                <Link
+                  key={product.name}
+                  href={product.href}
+                  className={`sidebar-item text-sm ${isActive ? 'sidebar-item-active' : 'sidebar-item-inactive'}`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center">
+                      <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
+                      <div>
+                        <p className="font-medium">{product.name}</p>
+                        <p className="text-xs text-gray-500">{product.category}</p>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
         </div>
       </nav>
 
