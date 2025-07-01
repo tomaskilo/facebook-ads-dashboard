@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
@@ -21,35 +21,61 @@ const navigation = [
   { name: 'Creative Studio', href: '/dashboard/creative-studio', icon: SwatchIcon },
 ]
 
-// Current products - we'll expand this as more products are added
-const products = [
-  {
-    name: 'Colonbroom',
-    href: '/dashboard/products/colonbroom',
-    category: 'Digestive Health',
-    status: 'active'
-  }
-]
+interface Product {
+  id: number;
+  name: string;
+  initials: string;
+  category: string;
+  table_name: string;
+  created_at: string;
+}
 
 export default function Sidebar() {
   const [showAddProductModal, setShowAddProductModal] = useState(false)
   const [showUploadDataModal, setShowUploadDataModal] = useState(false)
-  const [productsList, setProductsList] = useState(products)
+  const [productsList, setProductsList] = useState<Product[]>([])
+  const [loadingProducts, setLoadingProducts] = useState(true)
   const pathname = usePathname()
   const { data: session } = useSession()
 
-  const handleProductAdded = (product: { name: string; initials: string; category: string }) => {
-    // Add the new product to the list
-    const newProduct = {
-      name: product.name,
-      href: `/dashboard/products/${product.initials.toLowerCase()}`,
-      category: product.category,
-      status: 'active' as const
+  // Fetch products from database
+  useEffect(() => {
+    fetchProducts()
+  }, [])
+
+  const fetchProducts = async () => {
+    try {
+      setLoadingProducts(true)
+      const response = await fetch('/api/products')
+      if (response.ok) {
+        const products = await response.json()
+        setProductsList(products)
+      } else {
+        console.error('Failed to fetch products')
+      }
+    } catch (error) {
+      console.error('Error fetching products:', error)
+    } finally {
+      setLoadingProducts(false)
     }
-    setProductsList(prev => [...prev, newProduct])
+  }
+
+  const handleProductAdded = (product: { name: string; initials: string; category: string }) => {
+    // Refresh the products list from database
+    fetchProducts()
     
     // Show success message
     console.log(`✅ Product "${product.name}" added successfully!`)
+  }
+
+  // Get product icon based on category
+  const getProductIcon = (category: string, name: string) => {
+    if (name.toLowerCase() === 'colonbroom') return '🌿'
+    if (category === 'Ecommerce') return '💊'
+    if (category === 'Go Health') return '🏥'
+    if (category === 'WMA') return '⚖️'
+    if (category === 'Beyond Wellness') return '🌟'
+    return '📦'
   }
 
   return (
@@ -91,21 +117,27 @@ export default function Sidebar() {
               <li>
                 <div className="text-xs font-semibold leading-6 text-slate-400">Products</div>
                 <ul role="list" className="-mx-2 mt-2 space-y-1">
-                  {productsList.map((product) => (
-                    <li key={product.name}>
-                      <Link
-                        href={product.href}
-                        className={classNames(
-                          pathname.includes(product.href)
-                            ? 'bg-slate-800 text-white'
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800',
-                          'group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold'
-                        )}
-                      >
-                        {product.name === 'Colonbroom' ? '🌿' : '💊'} {product.name}
-                      </Link>
-                    </li>
-                  ))}
+                  {loadingProducts ? (
+                    <li className="text-slate-400 px-2 py-2 text-sm">Loading products...</li>
+                  ) : productsList.length > 0 ? (
+                    productsList.map((product) => (
+                      <li key={product.id}>
+                        <Link
+                          href={`/dashboard/products/${product.name.toLowerCase()}`}
+                          className={classNames(
+                            pathname.includes(`/dashboard/products/${product.name.toLowerCase()}`)
+                              ? 'bg-slate-800 text-white'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800',
+                            'group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold'
+                          )}
+                        >
+                          {getProductIcon(product.category, product.name)} {product.name}
+                        </Link>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="text-slate-400 px-2 py-2 text-sm">No products yet</li>
+                  )}
                   <li>
                     <button
                       onClick={() => setShowAddProductModal(true)}
@@ -184,7 +216,10 @@ export default function Sidebar() {
         />
       )}
       {showUploadDataModal && (
-        <UploadDataModal onClose={() => setShowUploadDataModal(false)} />
+        <UploadDataModal 
+          onClose={() => setShowUploadDataModal(false)}
+          products={productsList}
+        />
       )}
     </>
   )

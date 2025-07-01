@@ -22,7 +22,11 @@ interface DesignerPerformance {
   totalSpend: number
 }
 
-export default function DesignerAnalytics() {
+interface DesignerAnalyticsProps {
+  productName: string
+}
+
+export default function DesignerAnalytics({ productName }: DesignerAnalyticsProps) {
   const [designers, setDesigners] = useState<Designer[]>([])
   const [selectedDesigner, setSelectedDesigner] = useState<Designer | null>(null)
   const [designerPerformance, setDesignerPerformance] = useState<DesignerPerformance[]>([])
@@ -44,15 +48,19 @@ export default function DesignerAnalytics() {
   // Fetch designers on component mount
   useEffect(() => {
     fetchDesigners()
-  }, [])
+  }, [productName])
 
   const fetchDesigners = async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/colonbroom/designers')
+      console.log(`🎨 Fetching designers for ${productName}`)
+      const response = await fetch(`/api/products/${productName}/designers`)
       if (response.ok) {
         const data = await response.json()
         setDesigners(data.designers || [])
+        console.log(`✅ Found ${data.designers?.length || 0} designers for ${productName}`)
+      } else {
+        console.error(`Failed to fetch designers for ${productName}`)
       }
     } catch (error) {
       console.error('Error fetching designers:', error)
@@ -64,10 +72,12 @@ export default function DesignerAnalytics() {
   const fetchDesignerPerformance = async (initials: string) => {
     try {
       setPerformanceLoading(true)
-      const response = await fetch(`/api/colonbroom/designer-performance/${initials}`)
+      console.log(`🎨 Fetching performance for designer ${initials} in ${productName}`)
+      const response = await fetch(`/api/products/${productName}/designer-performance/${initials}`)
       if (response.ok) {
         const data = await response.json()
         setDesignerPerformance(data.designerPerformance || [])
+        console.log(`✅ Found performance data for ${initials}: ${data.designerPerformance?.length || 0} weeks`)
       }
     } catch (error) {
       console.error('Error fetching designer performance:', error)
@@ -93,7 +103,8 @@ export default function DesignerAnalytics() {
 
     try {
       setLoading(true)
-      const response = await fetch('/api/colonbroom/designers', {
+      console.log(`🎨 Creating designer ${formData.initials} for ${productName}`)
+      const response = await fetch(`/api/products/${productName}/designers`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -106,6 +117,7 @@ export default function DesignerAnalytics() {
         setDesigners(prev => [...prev, data.designer])
         setFormData({ name: '', surname: '', initials: '' })
         setShowAddForm(false)
+        console.log(`✅ Created designer ${formData.initials} for ${productName}`)
       } else {
         const errorData = await response.json()
         setFormError(errorData.error || 'Failed to add designer')
@@ -163,7 +175,7 @@ export default function DesignerAnalytics() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-white mb-2">Designer Analytics</h2>
-          <p className="text-gray-400 text-sm">Track individual designer performance and ad creation statistics</p>
+          <p className="text-gray-400 text-sm">Track individual designer performance and ad creation statistics for {productName}</p>
         </div>
       </div>
 

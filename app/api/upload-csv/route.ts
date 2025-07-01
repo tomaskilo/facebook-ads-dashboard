@@ -12,36 +12,47 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { csvData, weekNumber } = body
+    const { csvData, weekNumber, tableName } = body
 
-    if (!csvData || !Array.isArray(csvData) || !weekNumber) {
-      return NextResponse.json({ error: 'Invalid data format' }, { status: 400 })
+    if (!csvData || !Array.isArray(csvData) || !weekNumber || !tableName) {
+      return NextResponse.json({ error: 'Invalid data format. csvData, weekNumber, and tableName are required.' }, { status: 400 })
+    }
+
+    // Validate table name to prevent SQL injection
+    if (!/^[a-z0-9_]+_ads_data$/.test(tableName)) {
+      return NextResponse.json({ error: 'Invalid table name format' }, { status: 400 })
     }
 
     // Create service role client to bypass RLS
     const supabase = createServiceSupabaseClient()
 
-    // Check for duplicate week data
+    // Check for duplicate week data in the specific table
     const { data: existingData, error: checkError } = await supabase
-      .from('cb_ads_data')
+      .from(tableName)
       .select('week_number')
       .eq('week_number', weekNumber)
       .limit(1)
 
     if (checkError) {
       console.error('Error checking duplicates:', checkError)
+      // If table doesn't exist, provide helpful error message
+      if (checkError.code === '42P01') {
+        return NextResponse.json({ 
+          error: `Table "${tableName}" does not exist. Please create the product table first by running the SQL provided when you created the product.` 
+        }, { status: 404 })
+      }
       return NextResponse.json({ error: 'Database error while checking duplicates' }, { status: 500 })
     }
 
     if (existingData && existingData.length > 0) {
       return NextResponse.json({ 
-        error: `Week ${weekNumber} data already exists in the database. Please choose a different week or delete existing data first.` 
+        error: `Week ${weekNumber} data already exists in ${tableName}. Please choose a different week or delete existing data first.` 
       }, { status: 409 })
     }
 
-    // Insert the data
+    // Insert the data into the specified table
     const { error: insertError } = await supabase
-      .from('cb_ads_data')
+      .from(tableName)
       .insert(csvData)
 
     if (insertError) {
@@ -51,8 +62,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ 
       success: true, 
-      message: `Successfully uploaded ${csvData.length} ads for week ${weekNumber}!`,
-      count: csvData.length
+      message: `Successfully uploaded ${csvData.length} ads for week ${weekNumber} to ${tableName}!`,
+      count: csvData.length,
+      tableName: tableName
     })
 
   } catch (error) {

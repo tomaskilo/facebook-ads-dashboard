@@ -7,6 +7,12 @@ import AddProductModal from '@/components/modals/AddProductModal'
 export default function QuickActions() {
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false)
 
+  const handleProductAdded = (product: { name: string; initials: string; category: string }) => {
+    // Product has been added successfully
+    console.log('Product added:', product)
+    setIsAddProductModalOpen(false)
+  }
+
   const actions = [
     {
       name: 'Analyze Ad Performance',
@@ -63,6 +69,7 @@ export default function QuickActions() {
       <AddProductModal 
         isOpen={isAddProductModalOpen}
         onClose={() => setIsAddProductModalOpen(false)}
+        onProductAdded={handleProductAdded}
       />
     </>
   )

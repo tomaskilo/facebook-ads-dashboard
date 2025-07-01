@@ -3,49 +3,17 @@
 ## Overview
 The system now supports dynamically creating new products with their own database tables. When you add a new product (e.g., Bioma with initials BI), the system will:
 
-1. Create a new table `bi_ads_data` with the same structure as `cb_ads_data`
-2. Add all necessary indexes, triggers, and views
-3. Set up Row Level Security policies
+1. Store product metadata in the `products` table
+2. Generate SQL for you to manually run in Supabase
+3. Create a new table `bi_ads_data` with the same structure as `cb_ads_data`
 4. Add the product to the navigation sidebar
 
-## Required Supabase Setup
+## Required Supabase Setup (Run Once)
 
-**IMPORTANT**: Before using the Add Product feature, you need to run this SQL in your Supabase SQL Editor:
+**IMPORTANT**: Before using the Add Product feature, you need to run this SQL in your Supabase SQL Editor **ONCE**:
 
 ```sql
--- Create function to check if a table exists
-CREATE OR REPLACE FUNCTION check_table_exists(table_name text)
-RETURNS boolean
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-BEGIN
-    RETURN EXISTS (
-        SELECT 1 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = $1
-    );
-END;
-$$;
-
--- Create function to execute SQL queries (for table creation)
-CREATE OR REPLACE FUNCTION execute_sql(sql_query text)
-RETURNS boolean
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-BEGIN
-    EXECUTE sql_query;
-    RETURN true;
-EXCEPTION
-    WHEN OTHERS THEN
-        RAISE EXCEPTION 'Error executing SQL: %', SQLERRM;
-        RETURN false;
-END;
-$$;
-
--- Create the products metadata table if it doesn't exist
+-- Create the products metadata table (if it doesn't exist)
 CREATE TABLE IF NOT EXISTS products (
     id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL,
@@ -58,44 +26,67 @@ CREATE TABLE IF NOT EXISTS products (
 -- Enable RLS on products table
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 
--- Create policies for the products table
-DROP POLICY IF EXISTS "Allow authenticated users to read products" ON products;
-DROP POLICY IF EXISTS "Allow authenticated users to insert products" ON products;
-DROP POLICY IF EXISTS "Allow authenticated users to update products" ON products;
-DROP POLICY IF EXISTS "Allow authenticated users to delete products" ON products;
+-- Create policies for the products table (with IF NOT EXISTS handling)
+DO $$
+BEGIN
+    -- Drop existing policies if they exist (to handle re-runs)
+    DROP POLICY IF EXISTS "Allow authenticated users to read products" ON products;
+    DROP POLICY IF EXISTS "Allow authenticated users to insert products" ON products;
+    DROP POLICY IF EXISTS "Allow authenticated users to update products" ON products;
+    DROP POLICY IF EXISTS "Allow authenticated users to delete products" ON products;
+    
+    -- Create new policies
+    CREATE POLICY "Allow authenticated users to read products" ON products
+        FOR SELECT USING (auth.uid() IS NOT NULL);
 
-CREATE POLICY "Allow authenticated users to read products" ON products
-    FOR SELECT USING (auth.uid() IS NOT NULL);
+    CREATE POLICY "Allow authenticated users to insert products" ON products
+        FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
-CREATE POLICY "Allow authenticated users to insert products" ON products
-    FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+    CREATE POLICY "Allow authenticated users to update products" ON products
+        FOR UPDATE USING (auth.uid() IS NOT NULL);
 
-CREATE POLICY "Allow authenticated users to update products" ON products
-    FOR UPDATE USING (auth.uid() IS NOT NULL);
+    CREATE POLICY "Allow authenticated users to delete products" ON products
+        FOR DELETE USING (auth.uid() IS NOT NULL);
+EXCEPTION
+    -- Handle case where policies already exist
+    WHEN duplicate_object THEN
+        RAISE NOTICE 'Policies already exist, skipping creation.';
+END $$;
 
-CREATE POLICY "Allow authenticated users to delete products" ON products
-    FOR DELETE USING (auth.uid() IS NOT NULL);
+-- Success message
+SELECT 'Setup completed successfully!' as message;
 ```
 
 ## How to Use
 
-1. **Run the SQL setup** in Supabase (above)
+1. **Run the one-time setup SQL** in Supabase (above) - only needed once
 2. **Click "Add Product"** in the sidebar navigation
 3. **Fill in the form**:
    - Product Name: e.g., "Bioma"
    - Product Initials: e.g., "BI" (will be used for table name)
    - Category: Select from dropdown (Ecommerce, Ecom Accelerator, Go Health, WMA, Beyond Wellness)
 4. **Click "Create Product"**
+5. **Copy and run the generated SQL** in Supabase SQL Editor to create the actual table
 
-## What Happens Automatically
+## Two-Step Process
+
+### Step 1: Product Metadata (Automatic)
+✅ **Product Info**: Stored in `products` table  
+✅ **Navigation**: Product appears in sidebar immediately  
+✅ **SQL Generation**: Clean SQL generated for table creation  
+
+### Step 2: Table Creation (Manual)
+📋 **Copy SQL**: Generated SQL provided in modal  
+🗄 **Run in Supabase**: Paste and execute in SQL Editor  
+✅ **Table Created**: `{initials}_ads_data` table with full structure  
+
+## What the Generated SQL Creates
 
 ✅ **Database Table**: Creates `{initials}_ads_data` (e.g., `bi_ads_data`)  
 ✅ **Same Structure**: Identical to Colonbroom table (`cb_ads_data`)  
 ✅ **Indexes**: All performance indexes created  
-✅ **Triggers**: Auto-update timestamps  
-✅ **Views**: Weekly summary, creative performance, Creative Hub analysis  
 ✅ **Security**: Row Level Security policies  
-✅ **Navigation**: Product appears in sidebar immediately  
+✅ **Permissions**: Full CRUD access for authenticated users  
 
 ## Example: Adding Bioma
 
@@ -104,17 +95,25 @@ CREATE POLICY "Allow authenticated users to delete products" ON products
 - **Category**: Ecommerce
 
 **Result**: 
-- Table: `bi_ads_data`
-- Views: `bi_weekly_summary`, `bi_creative_performance`, `bi_creative_hub_analysis`
+- Metadata: Stored in `products` table
+- Table: `bi_ads_data` (after running generated SQL)
 - Navigation: "💊 Bioma" appears in sidebar
-- URL: `/dashboard/products/bi`
+- URL: `/dashboard/products/bioma`
 
 ## Error Handling
 
 - ❌ **Duplicate initials**: System prevents creating products with same initials
 - ❌ **Invalid characters**: Initials are sanitized (alphanumeric only)
 - ❌ **Missing fields**: All fields are required
-- ❌ **Database errors**: Detailed error messages in console
+- ✅ **Safe setup**: One-time setup handles "already exists" errors gracefully
+
+## Why Two Steps?
+
+This approach ensures:
+- ✅ **Reliability**: No complex SQL functions that can fail
+- ✅ **Safety**: You control exactly what SQL runs in your database
+- ✅ **Transparency**: You can see and verify the SQL before running it
+- ✅ **Flexibility**: Easy to modify the generated SQL if needed
 
 ## Future Features
 

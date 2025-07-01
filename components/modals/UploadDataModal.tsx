@@ -6,8 +6,18 @@ import { XMarkIcon, CloudArrowUpIcon, CheckCircleIcon, ExclamationTriangleIcon }
 import { useDropzone } from 'react-dropzone'
 import Papa from 'papaparse'
 
+interface Product {
+  id: number;
+  name: string;
+  initials: string;
+  category: string;
+  table_name: string;
+  created_at: string;
+}
+
 interface UploadDataModalProps {
   onClose: () => void
+  products: Product[]
 }
 
 interface ParsedAdData {
@@ -30,21 +40,35 @@ interface FileUploadStatus {
   file: File
   status: 'pending' | 'processing' | 'success' | 'error'
   weekNumber: string
+  productInitials: string
+  tableName: string
   message?: string
   recordsCount?: number
 }
 
-export default function UploadDataModal({ onClose }: UploadDataModalProps) {
+export default function UploadDataModal({ onClose, products }: UploadDataModalProps) {
   const [files, setFiles] = useState<FileUploadStatus[]>([])
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [dragActive, setDragActive] = useState(false)
   const [overallProgress, setOverallProgress] = useState(0)
 
-  // Extract week number from filename (e.g., "CB W01.csv" -> "W01")
-  const extractWeekNumber = (filename: string): string => {
-    const match = filename.match(/CB\s+W(\d+)/i)
-    return match ? `W${match[1].padStart(2, '0')}` : ''
+  // Extract week number and product initials from filename (e.g., "BI W04.csv" -> "W04", "BI")
+  const extractFileInfo = (filename: string): { weekNumber: string, productInitials: string } => {
+    // Match pattern: {INITIALS} W{NUMBER}.csv (e.g., "BI W04.csv", "CB W01.csv")
+    const match = filename.match(/^([A-Z]{2,5})\s+W(\d+)\.csv$/i)
+    if (match) {
+      return {
+        productInitials: match[1].toUpperCase(),
+        weekNumber: `W${match[2].padStart(2, '0')}`
+      }
+    }
+    return { weekNumber: '', productInitials: '' }
+  }
+
+  // Find product by initials
+  const findProductByInitials = (initials: string): Product | undefined => {
+    return products.find(p => p.initials.toUpperCase() === initials.toUpperCase())
   }
 
   // Parse creative type based on ad name conventions
@@ -77,9 +101,10 @@ export default function UploadDataModal({ onClose }: UploadDataModalProps) {
     return 'IMAGE'
   }
 
-  // Extract year and month from ad name (e.g., "CB_2024_Dec_..." -> 2024, "Dec")
-  const extractYearMonth = (adName: string): { year?: number, month?: string } => {
-    const match = adName.match(/CB_(\d{4})_([A-Za-z]{3})/i)
+  // Extract year and month from ad name (e.g., "BI_2024_Dec_..." -> 2024, "Dec")
+  const extractYearMonth = (adName: string, productInitials: string): { year?: number, month?: string } => {
+    const pattern = new RegExp(`${productInitials}_(\\d{4})_([A-Za-z]{3})`, 'i')
+    const match = adName.match(pattern)
     if (match) {
       return {
         year: parseInt(match[1]),
@@ -106,7 +131,7 @@ export default function UploadDataModal({ onClose }: UploadDataModalProps) {
   }
 
   // Parse CSV data
-  const parseCSVData = (csvData: any[], weekNumber: string): ParsedAdData[] => {
+  const parseCSVData = (csvData: any[], weekNumber: string, productInitials: string): ParsedAdData[] => {
     return csvData.slice(1).map((row: any[]) => { // Skip header row
       const [
         adNumber, // Skip this column
@@ -122,7 +147,7 @@ export default function UploadDataModal({ onClose }: UploadDataModalProps) {
 
       const cleanedAdName = cleanAdName(rawAdName || '')
       const creativeType = parseCreativeType(cleanedAdName, rawCreativeType || '')
-      const { year, month } = extractYearMonth(cleanedAdName)
+      const { year, month } = extractYearMonth(cleanedAdName, productInitials)
       const aspectRatio = extractAspectRatio(cleanedAdName)
 
       return {
@@ -144,7 +169,7 @@ export default function UploadDataModal({ onClose }: UploadDataModalProps) {
   }
 
   // Upload data via API
-  const uploadViaAPI = async (parsedData: ParsedAdData[], weekNumber: string) => {
+  const uploadViaAPI = async (parsedData: ParsedAdData[], weekNumber: string, tableName: string) => {
     const response = await fetch('/api/upload-csv', {
       method: 'POST',
       headers: {
@@ -152,7 +177,8 @@ export default function UploadDataModal({ onClose }: UploadDataModalProps) {
       },
       body: JSON.stringify({
         csvData: parsedData,
-        weekNumber: weekNumber
+        weekNumber: weekNumber,
+        tableName: tableName
       }),
     })
 
@@ -180,10 +206,10 @@ export default function UploadDataModal({ onClose }: UploadDataModalProps) {
       Papa.parse(fileStatus.file, {
         complete: async (parseResult) => {
           try {
-            const parsedData = parseCSVData(parseResult.data, fileStatus.weekNumber)
+            const parsedData = parseCSVData(parseResult.data, fileStatus.weekNumber, fileStatus.productInitials)
             
             // Upload via API
-            const uploadResult = await uploadViaAPI(parsedData, fileStatus.weekNumber)
+            const uploadResult = await uploadViaAPI(parsedData, fileStatus.weekNumber, fileStatus.tableName)
             
             updateFileStatus(index, { 
               status: 'success', 
@@ -255,27 +281,36 @@ export default function UploadDataModal({ onClose }: UploadDataModalProps) {
           file,
           status: 'error' as const,
           weekNumber: '',
+          productInitials: '',
+          tableName: '',
           message: 'File must be a CSV file'
         }
       }
 
-      // Validate filename format (must start with CB)
-      if (!file.name.toLowerCase().startsWith('cb')) {
+      // Extract file info
+      const { weekNumber, productInitials } = extractFileInfo(file.name)
+      
+      if (!weekNumber || !productInitials) {
         return {
           file,
           status: 'error' as const,
           weekNumber: '',
-          message: 'File must be a Colonbroom CSV file (starting with CB)'
+          productInitials: '',
+          tableName: '',
+          message: 'Invalid filename format. Use: {INITIALS} W{NUMBER}.csv (e.g., BI W04.csv)'
         }
       }
 
-      const weekNumber = extractWeekNumber(file.name)
-      if (!weekNumber) {
+      // Find matching product
+      const product = findProductByInitials(productInitials)
+      if (!product) {
         return {
           file,
           status: 'error' as const,
-          weekNumber: '',
-          message: 'Could not extract week number from filename. Use format: CB W01.csv'
+          weekNumber,
+          productInitials,
+          tableName: '',
+          message: `Product with initials "${productInitials}" not found. Create the product first.`
         }
       }
 
@@ -283,26 +318,50 @@ export default function UploadDataModal({ onClose }: UploadDataModalProps) {
         file,
         status: 'pending' as const,
         weekNumber,
-        message: `Ready to upload ${weekNumber}`
+        productInitials,
+        tableName: product.table_name,
+        message: `Ready to upload ${weekNumber} for ${product.name}`
       }
     })
 
-    // Check for duplicate week numbers
-    const weekNumbers = newFiles.map(f => f.weekNumber).filter(Boolean)
-    const duplicates = weekNumbers.filter((week, index) => weekNumbers.indexOf(week) !== index)
-    
-    if (duplicates.length > 0) {
-      setError(`Duplicate week numbers found: ${duplicates.join(', ')}. Please remove duplicate files.`)
-      return
+    // Check for duplicate week numbers within the same product
+    const productWeeks = new Map<string, string[]>()
+    newFiles.forEach(f => {
+      if (f.status === 'pending') {
+        const key = f.productInitials
+        if (!productWeeks.has(key)) {
+          productWeeks.set(key, [])
+        }
+        productWeeks.get(key)!.push(f.weekNumber)
+      }
+    })
+
+    // Check for duplicates
+    for (const [product, weeks] of productWeeks) {
+      const duplicates = weeks.filter((week, index) => weeks.indexOf(week) !== index)
+      if (duplicates.length > 0) {
+        setError(`Duplicate week numbers found for ${product}: ${duplicates.join(', ')}. Please remove duplicate files.`)
+        return
+      }
     }
 
     // Check for duplicates with existing files
-    const existingWeeks = files.map(f => f.weekNumber)
-    const conflicts = weekNumbers.filter(week => existingWeeks.includes(week))
-    
-    if (conflicts.length > 0) {
-      setError(`Week numbers already added: ${conflicts.join(', ')}. Please remove duplicate files.`)
-      return
+    const existingProductWeeks = new Map<string, string[]>()
+    files.forEach(f => {
+      const key = f.productInitials
+      if (!existingProductWeeks.has(key)) {
+        existingProductWeeks.set(key, [])
+      }
+      existingProductWeeks.get(key)!.push(f.weekNumber)
+    })
+
+    for (const [product, weeks] of productWeeks) {
+      const existingWeeks = existingProductWeeks.get(product) || []
+      const conflicts = weeks.filter(week => existingWeeks.includes(week))
+      if (conflicts.length > 0) {
+        setError(`Week numbers already added for ${product}: ${conflicts.join(', ')}. Please remove duplicate files.`)
+        return
+      }
     }
 
     setFiles(prev => [...prev, ...newFiles])
@@ -345,6 +404,9 @@ export default function UploadDataModal({ onClose }: UploadDataModalProps) {
   const validFiles = files.filter(f => f.status !== 'error')
   const canStartUpload = validFiles.length > 0 && !uploading
 
+  // Get available products for display
+  const availableProducts = products.map(p => `${p.initials} (${p.name})`).join(', ') || 'No products available'
+
   return (
     <Dialog open={true} onClose={onClose} className="relative z-50">
       <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
@@ -352,7 +414,7 @@ export default function UploadDataModal({ onClose }: UploadDataModalProps) {
         <Dialog.Panel className="mx-auto max-w-2xl bg-white rounded-lg shadow-lg max-h-[90vh] overflow-hidden">
           <div className="flex items-center justify-between p-6 border-b">
             <Dialog.Title className="text-lg font-semibold text-gray-900">
-              Bulk Upload Colonbroom Data
+              Bulk Upload Product Data
             </Dialog.Title>
             <button
               onClick={onClose}
@@ -378,10 +440,10 @@ export default function UploadDataModal({ onClose }: UploadDataModalProps) {
                 Upload Multiple CSV Files
               </p>
               <p className="text-sm text-gray-600 mb-4">
-                Drag and drop your Colonbroom CSV files here, or click to browse
+                Drag and drop your product CSV files here, or click to browse
               </p>
               <p className="text-xs text-gray-500">
-                Format: CB W01.csv, CB W02.csv, etc. • Select up to 25 files
+                Format: {availableProducts} • Example: BI W04.csv, CB W01.csv
               </p>
             </div>
 
@@ -414,7 +476,8 @@ export default function UploadDataModal({ onClose }: UploadDataModalProps) {
                             {fileStatus.file.name}
                           </p>
                           <p className="text-xs text-gray-500">
-                            {fileStatus.weekNumber && `Week: ${fileStatus.weekNumber} • `}
+                            {fileStatus.productInitials && `${fileStatus.productInitials} • `}
+                            {fileStatus.weekNumber && `${fileStatus.weekNumber} • `}
                             {fileStatus.message}
                             {fileStatus.recordsCount && ` • ${fileStatus.recordsCount} records`}
                           </p>
@@ -483,11 +546,13 @@ export default function UploadDataModal({ onClose }: UploadDataModalProps) {
               <h4 className="font-semibold mb-2">Bulk Upload Instructions:</h4>
               <ul className="space-y-1">
                 <li>• Select multiple CSV files at once (Ctrl/Cmd + click)</li>
-                <li>• Each file must start with "CB" (Colonbroom)</li>
-                <li>• Include week number: CB W01.csv, CB W02.csv, etc.</li>
+                <li>• Filename format: {`{INITIALS} W{NUMBER}.csv`}</li>
+                <li>• Available products: {availableProducts}</li>
+                <li>• Example: BI W04.csv (Bioma Week 4), CB W01.csv (Colonbroom Week 1)</li>
                 <li>• Files will be processed sequentially</li>
-                <li>• Duplicate week numbers will be rejected</li>
+                <li>• Duplicate week numbers for same product will be rejected</li>
                 <li>• Standard CSV format with 9 columns required</li>
+                <li>• Create new products first using "Add Product" if needed</li>
               </ul>
             </div>
           </div>

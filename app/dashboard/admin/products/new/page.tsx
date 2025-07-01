@@ -15,6 +15,12 @@ export default function NewProductPage() {
     router.push('/dashboard')
   }
 
+  const handleProductAdded = (product: { name: string; initials: string; category: string }) => {
+    // Product has been added successfully
+    console.log('Product added:', product)
+    // The modal will handle closing itself
+  }
+
   return (
     <div className="p-6">
       <div className="mb-8">
@@ -25,6 +31,7 @@ export default function NewProductPage() {
       <AddProductModal 
         isOpen={isModalOpen}
         onClose={handleClose}
+        onProductAdded={handleProductAdded}
       />
     </div>
   )

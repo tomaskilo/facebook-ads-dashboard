@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
+import { useParams } from 'next/navigation'
 import { ChartBarIcon, CalendarIcon, UsersIcon, ClipboardIcon } from '@heroicons/react/24/outline'
 import ScaledAdsTooltip from '@/components/ScaledAdsTooltip'
 import WeeklyPerformanceChart from '@/components/WeeklyPerformanceChart'
 import DesignerAnalytics from '@/components/DesignerAnalytics'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 
-interface ColonbroomStats {
+interface ProductStats {
   totalSpend: number
   totalSpendChange: number
   activeAds: number
@@ -39,10 +40,33 @@ interface TopAd {
   week_number: string
 }
 
-export default function ColonbroomPage() {
+interface ProductInfo {
+  name: string
+  category: string
+  initials: string
+}
+
+// Product descriptions by category
+const getProductDescription = (product: ProductInfo) => {
+  const descriptions: Record<string, string> = {
+    'Ecommerce': 'E-commerce product performance tracking and optimization',
+    'Go Health': 'Health and wellness product analytics and insights', 
+    'WMA': 'Weight management product performance analysis',
+    'Beyond Wellness': 'Advanced wellness product tracking and optimization',
+    'Ecom Accelerator': 'Accelerated e-commerce growth analytics'
+  }
+  
+  return descriptions[product.category] || 'Product performance tracking and optimization'
+}
+
+export default function DynamicProductPage() {
   const { data: session, status } = useSession()
+  const params = useParams()
+  const productName = params.product as string
+  
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [productInfo, setProductInfo] = useState<ProductInfo | null>(null)
   const [showScaledAdsTooltip, setShowScaledAdsTooltip] = useState(false)
   const [selectedWeekForTooltip, setSelectedWeekForTooltip] = useState('')
   const [showTable, setShowTable] = useState(false)
@@ -50,7 +74,7 @@ export default function ColonbroomPage() {
   const [itemsPerPage] = useState(10)
   
   // State for real data
-  const [stats, setStats] = useState<ColonbroomStats>({
+  const [stats, setStats] = useState<ProductStats>({
     totalSpend: 0,
     totalSpendChange: 0,
     activeAds: 0,
@@ -64,13 +88,37 @@ export default function ColonbroomPage() {
 
   const supabase = createClientComponentClient()
 
-  // Fetch data using API endpoints (bypasses RLS)
+  // Fetch product info
+  const fetchProductInfo = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('name, category, initials')
+        .ilike('name', `%${productName}%`)
+        .single()
+
+      if (error || !data) {
+        console.error('Product not found:', error)
+        setError(`Product "${productName}" not found`)
+        return null
+      }
+
+      setProductInfo(data)
+      return data
+    } catch (err) {
+      console.error('Error fetching product info:', err)
+      setError('Failed to load product information')
+      return null
+    }
+  }
+
+  // Fetch data using dynamic API endpoints
   const fetchAllData = async () => {
     setLoading(true)
     setError('')
     
     try {
-      console.log('🔄 Fetching data via API endpoints...')
+      console.log(`🔄 Fetching data for ${productName} via dynamic API endpoints...`)
       console.log('👤 Session status:', status)
       console.log('👤 Session data:', session ? `${session.user?.name} (${session.user?.email})` : 'No session')
 
@@ -85,14 +133,20 @@ export default function ColonbroomPage() {
         return
       }
 
+      // First get product info
+      const productData = await fetchProductInfo()
+      if (!productData) {
+        return // Error already set in fetchProductInfo
+      }
+
       // Fetch all data in parallel
       const [statsResponse, weeklyResponse, topAdsResponse] = await Promise.all([
-        fetch('/api/colonbroom/stats'),
-        fetch('/api/colonbroom/weekly-data'),
-        fetch('/api/colonbroom/top-ads')
+        fetch(`/api/products/${productName}/stats`),
+        fetch(`/api/products/${productName}/weekly-data`),
+        fetch(`/api/products/${productName}/top-ads`)
       ])
 
-      console.log('📡 API Response Status:', {
+      console.log(`📡 API Response Status for ${productName}:`, {
         stats: statsResponse.status,
         weekly: weeklyResponse.status,
         topAds: topAdsResponse.status
@@ -101,19 +155,19 @@ export default function ColonbroomPage() {
       // Check for specific error responses
       if (!statsResponse.ok) {
         const errorText = await statsResponse.text()
-        console.error('Stats API Error:', statsResponse.status, errorText)
+        console.error(`${productName} Stats API Error:`, statsResponse.status, errorText)
       }
       if (!weeklyResponse.ok) {
         const errorText = await weeklyResponse.text()
-        console.error('Weekly API Error:', weeklyResponse.status, errorText)
+        console.error(`${productName} Weekly API Error:`, weeklyResponse.status, errorText)
       }
       if (!topAdsResponse.ok) {
         const errorText = await topAdsResponse.text()
-        console.error('Top Ads API Error:', topAdsResponse.status, errorText)
+        console.error(`${productName} Top Ads API Error:`, topAdsResponse.status, errorText)
       }
 
       if (!statsResponse.ok || !weeklyResponse.ok || !topAdsResponse.ok) {
-        throw new Error(`API Error: Stats(${statsResponse.status}) Weekly(${weeklyResponse.status}) TopAds(${topAdsResponse.status})`)
+        throw new Error(`API Error for ${productName}: Stats(${statsResponse.status}) Weekly(${weeklyResponse.status}) TopAds(${topAdsResponse.status})`)
       }
 
       const [statsData, weeklyDataResult, topAdsData] = await Promise.all([
@@ -122,7 +176,7 @@ export default function ColonbroomPage() {
         topAdsResponse.json()
       ])
 
-      console.log('📊 API Response Data:')
+      console.log(`📊 API Response Data for ${productName}:`)
       console.log('Stats Data:', statsData)
       console.log('Weekly Data:', weeklyDataResult)
       console.log('Top Ads:', topAdsData)
@@ -135,11 +189,11 @@ export default function ColonbroomPage() {
       // Reset pagination when new data is loaded
       setCurrentPage(1)
 
-      console.log('✅ API data fetch completed successfully')
+      console.log(`✅ ${productName} API data fetch completed successfully`)
 
     } catch (err: any) {
-      console.error('❌ Error fetching data via API:', err)
-      setError(err.message || 'Failed to load data')
+      console.error(`❌ Error fetching data for ${productName} via API:`, err)
+      setError(err.message || `Failed to load ${productName} data`)
     } finally {
       setLoading(false)
     }
@@ -147,15 +201,15 @@ export default function ColonbroomPage() {
 
   // Fetch data on component mount (wait for session)
   useEffect(() => {
-    if (status !== 'loading') {
+    if (status !== 'loading' && productName) {
       fetchAllData()
     }
-  }, [status])
+  }, [status, productName])
 
   // Refresh data when needed (expose to child components)
   const refreshData = useCallback(() => {
     fetchAllData()
-  }, [])
+  }, [productName])
 
   const handleScaledAdsCountChange = useCallback((newCount: number) => {
     setStats(prevStats => ({
@@ -219,7 +273,7 @@ export default function ColonbroomPage() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-white">
-            {status === 'loading' ? 'Checking authentication...' : 'Loading data...'}
+            {status === 'loading' ? 'Checking authentication...' : `Loading ${productName} data...`}
           </p>
           {session && (
             <p className="text-gray-400 text-sm mt-2">
@@ -236,7 +290,7 @@ export default function ColonbroomPage() {
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-xl font-bold text-white mb-4">Authentication Required</h2>
-          <p className="text-gray-400 mb-4">Please log in to view Colonbroom analytics</p>
+          <p className="text-gray-400 mb-4">Please log in to view {productName} analytics</p>
           <button 
             onClick={() => window.location.href = '/'}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
@@ -265,15 +319,18 @@ export default function ColonbroomPage() {
     )
   }
 
+  // Format product name for display (capitalize first letter)
+  const displayName = productName.charAt(0).toUpperCase() + productName.slice(1)
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="border-b border-dark-700 pb-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2">Colonbroom Analytics</h1>
+            <h1 className="text-3xl font-bold text-white mb-2">{displayName} Analytics</h1>
             <p className="text-gray-400">
-              Digestive health product performance tracking and optimization
+              {productInfo ? getProductDescription(productInfo) : 'Product performance tracking and optimization'}
             </p>
           </div>
           
@@ -567,7 +624,7 @@ export default function ColonbroomPage() {
       </div>
 
       {/* Designer Analytics Section */}
-      <DesignerAnalytics productName="colonbroom" />
+      <DesignerAnalytics productName={productName} />
 
       {/* Scaled Ads Tooltip */}
       <ScaledAdsTooltip
@@ -578,4 +635,4 @@ export default function ColonbroomPage() {
       />
     </div>
   )
-}
+} 
