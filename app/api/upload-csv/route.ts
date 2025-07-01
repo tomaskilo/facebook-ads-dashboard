@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth'
 import { createServiceSupabaseClient } from '@/lib/supabase-client'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(request: NextRequest) {
   try {
     // Check authentication
