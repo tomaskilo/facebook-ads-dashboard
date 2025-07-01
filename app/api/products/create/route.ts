@@ -20,9 +20,9 @@ export async function POST(request: NextRequest) {
     const supabase = createServiceSupabaseClient();
 
     // Check if table already exists
-    const { data: existingTables, error: tableCheckError } = await supabase.rpc(
+    const { data: tableExists, error: tableCheckError } = await supabase.rpc(
       'check_table_exists',
-      { table_name: tableName }
+      { table_name_param: tableName }
     );
 
     if (tableCheckError) {
@@ -30,17 +30,15 @@ export async function POST(request: NextRequest) {
       // Continue anyway - the CREATE TABLE IF NOT EXISTS will handle duplicates
     }
 
-    if (existingTables && existingTables.length > 0) {
+    if (tableExists) {
       return NextResponse.json(
         { error: `Product with initials "${initials}" already exists` },
         { status: 409 }
       );
     }
 
-    // Create the new table with the same structure as cb_ads_data
-    const createTableSQL = `
-      -- Create the ${name} (${initials}) ads data table
-      CREATE TABLE IF NOT EXISTS ${tableName} (
+    // Create the new table step by step to avoid syntax errors
+    const createTableSQL = `CREATE TABLE IF NOT EXISTS ${tableName} (
         id BIGSERIAL PRIMARY KEY,
         ad_name TEXT NOT NULL,
         adset_name TEXT NOT NULL,
@@ -57,93 +55,9 @@ export async function POST(request: NextRequest) {
         week_number TEXT NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-      );
+      )`;
 
-      -- Create indexes for performance
-      CREATE INDEX IF NOT EXISTS idx_${tablePrefix}_ads_data_week_number ON ${tableName}(week_number);
-      CREATE INDEX IF NOT EXISTS idx_${tablePrefix}_ads_data_ad_name ON ${tableName}(ad_name);
-      CREATE INDEX IF NOT EXISTS idx_${tablePrefix}_ads_data_creative_type ON ${tableName}(creative_type);
-      CREATE INDEX IF NOT EXISTS idx_${tablePrefix}_ads_data_spend_usd ON ${tableName}(spend_usd);
-      CREATE INDEX IF NOT EXISTS idx_${tablePrefix}_ads_data_week_spend ON ${tableName}(week_number, spend_usd DESC);
-
-      -- Create trigger to automatically update updated_at
-      CREATE TRIGGER IF NOT EXISTS update_${tablePrefix}_ads_data_updated_at 
-          BEFORE UPDATE ON ${tableName} 
-          FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-      -- Add Row Level Security (RLS) 
-      ALTER TABLE ${tableName} ENABLE ROW LEVEL SECURITY;
-
-      -- Create policies for authenticated users
-      DROP POLICY IF EXISTS "Allow authenticated users to read ${tableName}" ON ${tableName};
-      DROP POLICY IF EXISTS "Allow authenticated users to insert ${tableName}" ON ${tableName};
-      DROP POLICY IF EXISTS "Allow authenticated users to update ${tableName}" ON ${tableName};
-      DROP POLICY IF EXISTS "Allow authenticated users to delete ${tableName}" ON ${tableName};
-
-      CREATE POLICY "Allow authenticated users to read ${tableName}" ON ${tableName}
-          FOR SELECT USING (auth.uid() IS NOT NULL);
-
-      CREATE POLICY "Allow authenticated users to insert ${tableName}" ON ${tableName}
-          FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
-
-      CREATE POLICY "Allow authenticated users to update ${tableName}" ON ${tableName}
-          FOR UPDATE USING (auth.uid() IS NOT NULL);
-
-      CREATE POLICY "Allow authenticated users to delete ${tableName}" ON ${tableName}
-          FOR DELETE USING (auth.uid() IS NOT NULL);
-
-      -- Create weekly summary view
-      CREATE OR REPLACE VIEW ${tablePrefix}_weekly_summary AS
-      SELECT 
-          week_number,
-          COUNT(*) as total_ads,
-          SUM(spend_usd) as total_spend,
-          AVG(spend_usd) as avg_spend_per_ad,
-          SUM(impressions) as total_impressions,
-          AVG(days_running) as avg_days_running,
-          COUNT(CASE WHEN creative_type = 'VIDEO' THEN 1 END) as video_ads,
-          COUNT(CASE WHEN creative_type = 'IMAGE' THEN 1 END) as image_ads,
-          COUNT(CASE WHEN is_creative_hub = 1 THEN 1 END) as creative_hub_ads,
-          COUNT(DISTINCT adset_name) as unique_adsets,
-          MAX(spend_usd) as highest_spend_ad,
-          MIN(spend_usd) as lowest_spend_ad
-      FROM ${tableName} 
-      GROUP BY week_number 
-      ORDER BY week_number;
-
-      -- Create creative performance view
-      CREATE OR REPLACE VIEW ${tablePrefix}_creative_performance AS
-      SELECT 
-          creative_type,
-          aspect_ratio,
-          COUNT(*) as ad_count,
-          SUM(spend_usd) as total_spend,
-          AVG(spend_usd) as avg_spend,
-          SUM(impressions) as total_impressions,
-          AVG(impressions) as avg_impressions,
-          AVG(days_running) as avg_days_running,
-          ROUND(SUM(impressions)::decimal / NULLIF(SUM(spend_usd), 0), 2) as impressions_per_dollar
-      FROM ${tableName} 
-      WHERE spend_usd > 0
-      GROUP BY creative_type, aspect_ratio
-      ORDER BY total_spend DESC;
-
-      -- Create Creative Hub analysis view
-      CREATE OR REPLACE VIEW ${tablePrefix}_creative_hub_analysis AS
-      SELECT 
-          CASE WHEN is_creative_hub = 1 THEN 'Creative Hub' ELSE 'Regular' END as ad_source,
-          COUNT(*) as ad_count,
-          SUM(spend_usd) as total_spend,
-          AVG(spend_usd) as avg_spend,
-          SUM(impressions) as total_impressions,
-          AVG(impressions) as avg_impressions,
-          AVG(days_running) as avg_days_running
-      FROM ${tableName} 
-      GROUP BY is_creative_hub
-      ORDER BY total_spend DESC;
-    `;
-
-    // Execute the SQL to create the table and related objects
+    // Execute the table creation
     const { error: createError } = await supabase.rpc('execute_sql', {
       sql_query: createTableSQL
     });
@@ -156,25 +70,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Also store the product metadata in a products table (create if doesn't exist)
-    const { error: metadataError } = await supabase.rpc('execute_sql', {
-      sql_query: `
-        -- Create products metadata table if it doesn't exist
-        CREATE TABLE IF NOT EXISTS products (
-          id BIGSERIAL PRIMARY KEY,
-          name TEXT NOT NULL,
-          initials TEXT NOT NULL UNIQUE,
-          category TEXT NOT NULL,
-          table_name TEXT NOT NULL,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-        );
-
-        -- Insert the new product
-        INSERT INTO products (name, initials, category, table_name)
-        VALUES ('${name}', '${initials}', '${category}', '${tableName}')
-        ON CONFLICT (initials) DO NOTHING;
-      `
-    });
+    // Store the product metadata using direct Supabase insert
+    const { error: metadataError } = await supabase
+      .from('products')
+      .insert({
+        name,
+        initials,
+        category,
+        table_name: tableName
+      });
 
     if (metadataError) {
       console.error('Error storing product metadata:', metadataError);

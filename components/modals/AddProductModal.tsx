@@ -112,7 +112,7 @@ export default function AddProductModal({ isOpen, onClose, onProductAdded }: Add
               value={formData.name}
               onChange={handleInputChange}
               required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white"
               placeholder="e.g., Bioma"
             />
           </div>
@@ -129,7 +129,7 @@ export default function AddProductModal({ isOpen, onClose, onProductAdded }: Add
               onChange={handleInitialsChange}
               required
               maxLength={5}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white"
               placeholder="e.g., BI"
               style={{ textTransform: 'uppercase' }}
             />
@@ -145,7 +145,7 @@ export default function AddProductModal({ isOpen, onClose, onProductAdded }: Add
               value={formData.category}
               onChange={handleInputChange}
               required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white"
             >
               <option value="" disabled>Select a category</option>
               {CATEGORIES.map((category) => (
