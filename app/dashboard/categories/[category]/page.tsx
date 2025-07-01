@@ -11,7 +11,12 @@ import {
   EyeIcon,
   PlayIcon,
   PhotoIcon,
-  HashtagIcon
+  HashtagIcon,
+  TrophyIcon,
+  StarIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
+  CurrencyDollarIcon
 } from '@heroicons/react/24/outline'
 import WeeklyPerformanceChart from '@/components/WeeklyPerformanceChart'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
@@ -37,17 +42,27 @@ interface WeeklyData {
   imageAds: number
 }
 
+interface ProductWeeklyData {
+  productName: string
+  weeklyData: WeeklyData[]
+  color: string
+}
+
 interface DesignerPerformance {
-  initials: string
   name: string
-  surname: string
+  initials: string
+  product: string
   totalAds: number
-  totalSpend: number
-  videoAds: number
-  imageAds: number
   scaledAds: number
-  workingAds: number
-  products: string[]
+  totalSpend: number
+  scalingRate: number
+  topAds: Array<{
+    id: string
+    ad_name: string
+    spend: number
+    ad_type: string
+    creative_hub: number
+  }>
 }
 
 interface Product {
@@ -58,135 +73,50 @@ interface Product {
   table_name: string
 }
 
-type MetricView = 'spend' | 'ads' | 'video-image'
-
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value)
-}
-
-const formatPercentage = (value: number) => {
-  const formatted = value.toFixed(1)
-  return `${value >= 0 ? '+' : ''}${formatted}%`
-}
-
 export default function CategoryPage() {
   const { data: session, status } = useSession()
   const params = useParams()
-  const categorySlug = params.category as string
-  const categoryName = categorySlug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-  
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [products, setProducts] = useState<Product[]>([])
-  const [metricView, setMetricView] = useState<MetricView>('spend')
-  const [showTable, setShowTable] = useState(false)
-  
-  // State for aggregated data
-  const [stats, setStats] = useState<CategoryStats>({
-    totalSpend: 0,
-    totalSpendChange: 0,
-    activeAds: 0,
-    scaledAds: 0,
-    workingAds: 0,
-    newAds: 0,
-    totalVideoAds: 0,
-    totalImageAds: 0
-  })
-  
-  const [weeklyData, setWeeklyData] = useState<WeeklyData[]>([])
-  const [designerPerformance, setDesignerPerformance] = useState<DesignerPerformance[]>([])
-
+  const category = params?.category as string
   const supabase = createClientComponentClient()
+  
+  const [categoryStats, setCategoryStats] = useState<CategoryStats | null>(null)
+  const [weeklyData, setWeeklyData] = useState<WeeklyData[]>([])
+  const [productComparisons, setProductComparisons] = useState<ProductWeeklyData[]>([])
+  const [designerPerformances, setDesignerPerformances] = useState<DesignerPerformance[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [loading, setLoading] = useState(true)
+  const [chartView, setChartView] = useState<'spend' | 'ads' | 'ratio'>('spend')
+  const [designerView, setDesignerView] = useState<'ads' | 'scaling' | 'spend'>('scaling')
 
-  // Fetch products in this category
-  const fetchCategoryProducts = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .ilike('category', `%${categoryName}%`)
+  // Color palette for product comparisons
+  const colors = [
+    '#3B82F6', '#EF4444', '#10B981', '#F59E0B', 
+    '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'
+  ]
 
-      if (error) {
-        console.error('Error fetching category products:', error)
-        setError(`Failed to load products for category "${categoryName}"`)
-        return []
-      }
-
-      setProducts(data || [])
-      return data || []
-    } catch (err) {
-      console.error('Error fetching category products:', err)
-      setError('Failed to load category information')
-      return []
-    }
-  }
-
-  // Aggregate data from all products in category
-  const fetchCategoryData = async () => {
+  const fetchCategoryData = useCallback(async () => {
+    if (!category) return
+    
     try {
       setLoading(true)
-      setError('')
-
-      const categoryProducts = await fetchCategoryProducts()
       
-      if (categoryProducts.length === 0) {
-        setError(`No products found for category "${categoryName}"`)
+      // Fetch products in this category
+      const { data: categoryProducts, error: productsError } = await supabase
+        .from('products')
+        .select('*')
+        .ilike('category', `%${category}%`)
+      
+      if (productsError) throw productsError
+      if (!categoryProducts?.length) {
+        console.log(`No products found for category: ${category}`)
+        setLoading(false)
         return
       }
-
-      console.log(`📊 Fetching data for ${categoryProducts.length} products in ${categoryName} category`)
-
-      // Fetch data from all products in parallel
-      const productDataPromises = categoryProducts.map(async (product) => {
-        const productName = product.name.toLowerCase()
-        
-        const [statsResponse, weeklyResponse, designersResponse] = await Promise.all([
-          fetch(`/api/products/${productName}/stats`),
-          fetch(`/api/products/${productName}/weekly-data`),
-          fetch(`/api/products/${productName}/designers`)
-        ])
-
-        if (!statsResponse.ok || !weeklyResponse.ok || !designersResponse.ok) {
-          console.warn(`Failed to fetch complete data for ${productName}`)
-          return null
-        }
-
-        const [statsData, weeklyData, designersData] = await Promise.all([
-          statsResponse.json(),
-          weeklyResponse.json(), 
-          designersResponse.json()
-        ])
-
-        return {
-          product,
-          stats: statsData.stats || {},
-          weeklyData: weeklyData.weeklyData || [],
-          designers: designersData.designers || []
-        }
-      })
-
-      const productDataResults = await Promise.all(productDataPromises)
-      const validProductData = productDataResults.filter(Boolean)
-
-      // Aggregate stats across all products
-      const aggregatedStats = validProductData.reduce((acc, data) => {
-        const stats = data!.stats
-        return {
-          totalSpend: acc.totalSpend + (stats.totalSpend || 0),
-          totalSpendChange: acc.totalSpendChange + (stats.totalSpendChange || 0),
-          activeAds: acc.activeAds + (stats.activeAds || 0),
-          scaledAds: acc.scaledAds + (stats.scaledAds || 0),
-          workingAds: acc.workingAds + (stats.workingAds || 0),
-          newAds: acc.newAds + (stats.newAds || 0),
-          totalVideoAds: acc.totalVideoAds + (stats.videoAds || 0),
-          totalImageAds: acc.totalImageAds + (stats.imageAds || 0)
-        }
-      }, {
+      
+      setProducts(categoryProducts)
+      
+      // Fetch aggregated data for all products
+      let totalStats: CategoryStats = {
         totalSpend: 0,
         totalSpendChange: 0,
         activeAds: 0,
@@ -195,361 +125,522 @@ export default function CategoryPage() {
         newAds: 0,
         totalVideoAds: 0,
         totalImageAds: 0
-      })
-
-      // Average the spend change percentage
-      if (validProductData.length > 0) {
-        aggregatedStats.totalSpendChange = aggregatedStats.totalSpendChange / validProductData.length
       }
-
-      setStats(aggregatedStats)
-
-      // Aggregate weekly data across all products
-      const weeklyDataMap: { [week: string]: WeeklyData } = {}
       
-      validProductData.forEach(data => {
-        data!.weeklyData.forEach((weekData: WeeklyData) => {
-          if (!weeklyDataMap[weekData.week]) {
-            weeklyDataMap[weekData.week] = {
-              week: weekData.week,
-              spend: 0,
-              adsCount: 0,
-              scaledAds: 0,
-              workingAds: 0,
-              videoAds: 0,
-              imageAds: 0
+      let allWeeklyData: { [week: string]: WeeklyData } = {}
+      let productWeeklyComparisons: ProductWeeklyData[] = []
+      let allDesigners: DesignerPerformance[] = []
+      
+      // Process each product
+      for (let i = 0; i < categoryProducts.length; i++) {
+        const product = categoryProducts[i]
+        
+        try {
+          // Fetch product stats
+          const statsResponse = await fetch(`/api/products/${product.name.toLowerCase()}/stats`)
+          if (statsResponse.ok) {
+            const productStats = await statsResponse.json()
+            totalStats.totalSpend += productStats.totalSpend || 0
+            totalStats.activeAds += productStats.activeAds || 0
+            totalStats.scaledAds += productStats.scaledAds || 0
+            totalStats.workingAds += productStats.workingAds || 0
+            totalStats.newAds += productStats.newAds || 0
+          }
+          
+          // Fetch weekly data
+          const weeklyResponse = await fetch(`/api/products/${product.name.toLowerCase()}/weekly-data`)
+          if (weeklyResponse.ok) {
+            const productWeeklyData = await weeklyResponse.json()
+            
+            // Store for product comparison
+            productWeeklyComparisons.push({
+              productName: product.name,
+              weeklyData: productWeeklyData,
+              color: colors[i % colors.length]
+            })
+            
+            // Aggregate for category totals
+            productWeeklyData.forEach((week: WeeklyData) => {
+              if (!allWeeklyData[week.week]) {
+                allWeeklyData[week.week] = {
+                  week: week.week,
+                  spend: 0,
+                  adsCount: 0,
+                  scaledAds: 0,
+                  workingAds: 0,
+                  videoAds: 0,
+                  imageAds: 0
+                }
+              }
+              
+              allWeeklyData[week.week].spend += week.spend || 0
+              allWeeklyData[week.week].adsCount += week.adsCount || 0
+              allWeeklyData[week.week].scaledAds += week.scaledAds || 0
+              allWeeklyData[week.week].workingAds += week.workingAds || 0
+              allWeeklyData[week.week].videoAds += week.videoAds || 0
+              allWeeklyData[week.week].imageAds += week.imageAds || 0
+            })
+          }
+          
+          // Fetch designers for this product
+          const designersResponse = await fetch(`/api/products/${product.name.toLowerCase()}/designers`)
+          if (designersResponse.ok) {
+            const designers = await designersResponse.json()
+            
+            for (const designer of designers) {
+              try {
+                // Fetch designer performance
+                const perfResponse = await fetch(`/api/products/${product.name.toLowerCase()}/designer-performance/${designer.initials}`)
+                if (perfResponse.ok) {
+                  const performance = await perfResponse.json()
+                  
+                  // Fetch top ads for this designer
+                  const topAdsResponse = await fetch(`/api/products/${product.name.toLowerCase()}/top-ads?designer=${designer.initials}&limit=3`)
+                  const topAds = topAdsResponse.ok ? await topAdsResponse.json() : []
+                  
+                  allDesigners.push({
+                    name: `${designer.name} ${designer.surname}`,
+                    initials: designer.initials,
+                    product: product.name,
+                    totalAds: performance.totalAds || 0,
+                    scaledAds: performance.scaledAds || 0,
+                    totalSpend: performance.totalSpend || 0,
+                    scalingRate: performance.totalAds > 0 ? (performance.scaledAds / performance.totalAds) * 100 : 0,
+                    topAds: topAds.slice(0, 3) || []
+                  })
+                }
+              } catch (error) {
+                console.error(`Error fetching designer ${designer.initials} performance:`, error)
+              }
             }
           }
-          
-          weeklyDataMap[weekData.week].spend += weekData.spend || 0
-          weeklyDataMap[weekData.week].adsCount += weekData.adsCount || 0
-          weeklyDataMap[weekData.week].scaledAds += weekData.scaledAds || 0
-          weeklyDataMap[weekData.week].workingAds += weekData.workingAds || 0
-          weeklyDataMap[weekData.week].videoAds += weekData.videoAds || 0
-          weeklyDataMap[weekData.week].imageAds += weekData.imageAds || 0
-        })
-      })
-
-      const aggregatedWeeklyData = Object.values(weeklyDataMap).sort((a, b) => 
-        a.week.localeCompare(b.week)
-      )
-      setWeeklyData(aggregatedWeeklyData)
-
-      // Aggregate designer performance across all products
-      const designerMap: { [initials: string]: DesignerPerformance } = {}
+        } catch (error) {
+          console.error(`Error fetching data for product ${product.name}:`, error)
+        }
+      }
       
-      validProductData.forEach(data => {
-        const productName = data!.product.name
-        data!.designers.forEach((designer: any) => {
-          if (!designerMap[designer.initials]) {
-            designerMap[designer.initials] = {
-              initials: designer.initials,
-              name: designer.name,
-              surname: designer.surname,
-              totalAds: 0,
-              totalSpend: 0,
-              videoAds: 0,
-              imageAds: 0,
-              scaledAds: 0,
-              workingAds: 0,
-              products: []
-            }
-          }
-          
-          // Add product to designer's product list if not already there
-          if (!designerMap[designer.initials].products.includes(productName)) {
-            designerMap[designer.initials].products.push(productName)
-          }
-          
-          // Note: We would need to fetch detailed designer performance from each product
-          // For now, we'll just track which products they work on
-        })
-      })
-
-      setDesignerPerformance(Object.values(designerMap))
-
-      console.log(`✅ Category ${categoryName} data aggregated successfully`)
-      console.log(`📊 Total products: ${validProductData.length}`)
-      console.log(`💰 Total spend: ${formatCurrency(aggregatedStats.totalSpend)}`)
-      console.log(`🎨 Total designers: ${Object.keys(designerMap).length}`)
-
-    } catch (err: any) {
-      console.error(`❌ Error fetching category data:`, err)
-      setError(err.message || 'Failed to load category data')
+      // Calculate video/image ratios
+      const totalAds = totalStats.activeAds
+      totalStats.totalVideoAds = Object.values(allWeeklyData).reduce((sum, week) => sum + week.videoAds, 0)
+      totalStats.totalImageAds = Object.values(allWeeklyData).reduce((sum, week) => sum + week.imageAds, 0)
+      
+      // Calculate spend change (simplified - using last vs first week)
+      const weeks = Object.keys(allWeeklyData).sort()
+      if (weeks.length >= 2) {
+        const firstWeek = allWeeklyData[weeks[0]]?.spend || 0
+        const lastWeek = allWeeklyData[weeks[weeks.length - 1]]?.spend || 0
+        totalStats.totalSpendChange = firstWeek > 0 ? ((lastWeek - firstWeek) / firstWeek) * 100 : 0
+      }
+      
+      setCategoryStats(totalStats)
+      setWeeklyData(Object.values(allWeeklyData).sort((a, b) => a.week.localeCompare(b.week)))
+      setProductComparisons(productWeeklyComparisons)
+      setDesignerPerformances(allDesigners.sort((a, b) => b.scalingRate - a.scalingRate))
+      
+    } catch (error) {
+      console.error('Error fetching category data:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [category, supabase])
 
-  // Fetch data on component mount
   useEffect(() => {
-    if (status !== 'loading' && categoryName) {
+    if (status === 'authenticated') {
       fetchCategoryData()
     }
-  }, [status, categoryName])
+  }, [status, fetchCategoryData])
 
-  // Get chart data based on current metric view
-  const getChartDataForView = () => {
-    switch (metricView) {
-      case 'spend':
-        return weeklyData.map(week => ({ ...week, value: week.spend, label: 'Spend' }))
-      case 'ads':
-        return weeklyData.map(week => ({ ...week, value: week.adsCount, label: 'Total Ads' }))
-      case 'video-image':
-        return weeklyData.map(week => ({ 
-          ...week, 
-          videoAds: week.videoAds, 
-          imageAds: week.imageAds,
-          label: 'Video vs Image'
-        }))
-      default:
-        return weeklyData
-    }
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', { 
+      style: 'currency', 
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount)
   }
 
-  if (status === 'loading') {
-    return <div className="flex items-center justify-center min-h-screen">
-      <div className="text-white">Loading...</div>
-    </div>
+  const formatNumber = (num: number) => {
+    return new Intl.NumberFormat('en-US').format(num)
   }
 
-  if (!session) {
-    return <div className="flex items-center justify-center min-h-screen">
-      <div className="text-white">Please sign in to view this page.</div>
-    </div>
+  const capitalizeWords = (str: string) => {
+    return str.split(' ').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    ).join(' ')
   }
 
-  if (loading) {
+  if (status === 'loading' || loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="mt-4 text-white">Loading {categoryName} category data...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading category analytics...</p>
         </div>
       </div>
     )
   }
 
-  if (error) {
+  if (!categoryStats) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="p-6">
         <div className="text-center">
-          <div className="text-red-400 mb-4">
-            <ClipboardIcon className="w-16 h-16 mx-auto mb-4" />
-            <h2 className="text-xl font-bold">Error</h2>
-          </div>
-          <p className="text-gray-400">{error}</p>
+          <h1 className="text-3xl font-bold text-white mb-4">Category Not Found</h1>
+          <p className="text-gray-400">No products found for category: {capitalizeWords(category.replace(/-/g, ' '))}</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <div className="p-6 space-y-8">
       {/* Header */}
-      <div className="text-center">
-        <h1 className="text-4xl font-bold text-white mb-2">
-          {categoryName} Category
-        </h1>
-        <p className="text-gray-400 text-lg">
-          Performance overview across {products.length} products
-        </p>
-        <div className="flex justify-center gap-2 mt-4">
-          {products.map(product => (
-            <span 
-              key={product.id}
-              className="inline-block px-3 py-1 bg-blue-600 bg-opacity-20 text-blue-400 rounded-full text-sm"
-            >
-              {product.name}
-            </span>
-          ))}
+      <div className="border-b border-gray-800 pb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-4xl font-bold text-white mb-2">
+              {capitalizeWords(category.replace(/-/g, ' '))} Analytics
+            </h1>
+            <p className="text-gray-400 text-lg">
+              Comprehensive performance overview across {products.length} products
+            </p>
+          </div>
+          <div className="flex items-center space-x-3">
+            <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-4 py-2 rounded-lg">
+              <span className="text-white font-semibold">{products.length} Products</span>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="metric-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-400 mb-1">Total Spend</p>
-              <p className="text-2xl font-bold text-white">{formatCurrency(stats.totalSpend)}</p>
-              <p className={`text-xs font-medium ${
-                stats.totalSpendChange >= 0 ? 'text-green-400' : 'text-red-400'
-              }`}>
-                {formatPercentage(stats.totalSpendChange)} vs last week
-              </p>
+        <div className="bg-gradient-to-br from-blue-900/50 to-blue-800/30 border border-blue-700/50 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <CurrencyDollarIcon className="h-8 w-8 text-blue-400" />
+            <div className={`flex items-center text-sm ${categoryStats.totalSpendChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {categoryStats.totalSpendChange >= 0 ? <ArrowUpIcon className="h-4 w-4 mr-1" /> : <ArrowDownIcon className="h-4 w-4 mr-1" />}
+              {Math.abs(categoryStats.totalSpendChange).toFixed(1)}%
             </div>
-            <ChartBarIcon className="h-8 w-8 text-blue-400" />
           </div>
+          <p className="text-3xl font-bold text-white mb-1">{formatCurrency(categoryStats.totalSpend)}</p>
+          <p className="text-blue-300 text-sm">Total Spend</p>
         </div>
 
-        <div className="metric-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-400 mb-1">Active Ads</p>
-              <p className="text-2xl font-bold text-white">{stats.activeAds}</p>
-              <p className="text-xs text-gray-400">Across all products</p>
-            </div>
-            <UsersIcon className="h-8 w-8 text-green-400" />
+        <div className="bg-gradient-to-br from-green-900/50 to-green-800/30 border border-green-700/50 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <HashtagIcon className="h-8 w-8 text-green-400" />
+            <TrophyIcon className="h-5 w-5 text-green-400" />
           </div>
+          <p className="text-3xl font-bold text-white mb-1">{formatNumber(categoryStats.activeAds)}</p>
+          <p className="text-green-300 text-sm">Active Ads</p>
         </div>
 
-        <div className="metric-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-400 mb-1">Scaled Ads</p>
-              <p className="text-2xl font-bold text-white">{stats.scaledAds}</p>
-              <p className="text-xs text-gray-400">$1000+/week</p>
-            </div>
+        <div className="bg-gradient-to-br from-purple-900/50 to-purple-800/30 border border-purple-700/50 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <StarIcon className="h-8 w-8 text-purple-400" />
+            <span className="text-purple-300 text-sm font-medium">
+              {categoryStats.activeAds > 0 ? ((categoryStats.scaledAds / categoryStats.activeAds) * 100).toFixed(1) : 0}%
+            </span>
           </div>
+          <p className="text-3xl font-bold text-white mb-1">{formatNumber(categoryStats.scaledAds)}</p>
+          <p className="text-purple-300 text-sm">Scaled Ads</p>
         </div>
 
-        <div className="metric-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-400 mb-1">Working Ads</p>
-              <p className="text-2xl font-bold text-white">{stats.workingAds}</p>
-              <p className="text-xs text-gray-400">$100-$1000/week</p>
+        <div className="bg-gradient-to-br from-amber-900/50 to-amber-800/30 border border-amber-700/50 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-2">
+              <PlayIcon className="h-5 w-5 text-amber-400" />
+              <PhotoIcon className="h-5 w-5 text-amber-400" />
             </div>
+            <span className="text-amber-300 text-sm font-medium">
+              {categoryStats.totalVideoAds + categoryStats.totalImageAds > 0 
+                ? ((categoryStats.totalVideoAds / (categoryStats.totalVideoAds + categoryStats.totalImageAds)) * 100).toFixed(0) 
+                : 0}% Video
+            </span>
           </div>
+          <p className="text-3xl font-bold text-white mb-1">
+            {formatNumber(categoryStats.totalVideoAds + categoryStats.totalImageAds)}
+          </p>
+          <p className="text-amber-300 text-sm">Total Creatives</p>
         </div>
       </div>
 
-      {/* Metric View Toggle */}
-      <div className="flex justify-center">
-        <div className="bg-dark-700 rounded-lg p-1 flex space-x-1">
-          <button
-            onClick={() => setMetricView('spend')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              metricView === 'spend'
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-400 hover:text-white hover:bg-dark-600'
-            }`}
-          >
-            <ChartBarIcon className="w-4 h-4 inline mr-2" />
-            Spend View
-          </button>
-          <button
-            onClick={() => setMetricView('ads')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              metricView === 'ads'
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-400 hover:text-white hover:bg-dark-600'
-            }`}
-          >
-            <HashtagIcon className="w-4 h-4 inline mr-2" />
-            Ad Count View
-          </button>
-          <button
-            onClick={() => setMetricView('video-image')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              metricView === 'video-image'
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-400 hover:text-white hover:bg-dark-600'
-            }`}
-          >
-            <PlayIcon className="w-4 h-4 inline mr-1" />
-            <PhotoIcon className="w-4 h-4 inline mr-2" />
-            Video vs Image
-          </button>
+      {/* Weekly Product Comparison Charts */}
+      <div className="bg-gray-900/50 border border-gray-700 rounded-xl p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold text-white">Product Performance Comparison</h2>
+          <div className="flex bg-gray-800 rounded-lg p-1">
+            <button
+              onClick={() => setChartView('spend')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                chartView === 'spend' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Spend
+            </button>
+            <button
+              onClick={() => setChartView('ads')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                chartView === 'ads' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Ad Count
+            </button>
+            <button
+              onClick={() => setChartView('ratio')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                chartView === 'ratio' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Video/Image Ratio
+            </button>
+          </div>
+        </div>
+        
+        <div className="h-80">
+          <ProductComparisonChart 
+            productComparisons={productComparisons}
+            chartView={chartView}
+          />
         </div>
       </div>
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Performance Chart */}
-        <div className="lg:col-span-3">
-          <div className="dashboard-card h-[600px] flex flex-col">
-            <div className="flex items-center justify-between mb-6 flex-shrink-0">
-              <h2 className="text-xl font-bold text-white">
-                Category Performance - {metricView === 'spend' ? 'Spend' : metricView === 'ads' ? 'Ad Count' : 'Video vs Image'}
-              </h2>
-              <button
-                onClick={() => setShowTable(!showTable)}
-                className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-md text-white text-sm hover:bg-dark-600 transition-colors"
-              >
-                {showTable ? 'Show Chart' : 'Show Table'}
-              </button>
-            </div>
-
-            {!showTable ? (
-              <div className="flex-1 min-h-0">
-                {weeklyData.length > 0 ? (
-                  <WeeklyPerformanceChart data={getChartDataForView()} />
-                ) : (
-                  <div className="text-center py-16 text-gray-400 flex-1 flex flex-col items-center justify-center">
-                    <ChartBarIcon className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                    <p>No weekly data available for this category.</p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="flex-1 overflow-auto">
-                <table className="min-w-full text-white">
-                  <thead className="bg-dark-700 sticky top-0">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Week</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Spend</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Ads</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Video</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Image</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Scaled</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Working</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-dark-600">
-                    {weeklyData.map((week) => (
-                      <tr key={week.week} className="hover:bg-dark-700">
-                        <td className="px-4 py-3 whitespace-nowrap font-medium">{week.week}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{formatCurrency(week.spend)}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{week.adsCount}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{week.videoAds}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{week.imageAds}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{week.scaledAds}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{week.workingAds}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+      {/* Designer Performance Comparison */}
+      <div className="bg-gray-900/50 border border-gray-700 rounded-xl p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold text-white">Designer Performance Analysis</h2>
+          <div className="flex bg-gray-800 rounded-lg p-1">
+            <button
+              onClick={() => setDesignerView('scaling')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                designerView === 'scaling' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Scaling Rate
+            </button>
+            <button
+              onClick={() => setDesignerView('ads')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                designerView === 'ads' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Ad Volume
+            </button>
+            <button
+              onClick={() => setDesignerView('spend')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                designerView === 'spend' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Total Spend
+            </button>
           </div>
         </div>
 
-        {/* Designer Performance */}
-        <div className="lg:col-span-1">
-          <div className="dashboard-card h-[600px] flex flex-col">
-            <h2 className="text-xl font-bold text-white mb-6 flex-shrink-0">Category Designers</h2>
-            <div className="flex-1 overflow-auto space-y-4">
-              {designerPerformance.length > 0 ? (
-                designerPerformance.map((designer) => (
-                  <div key={designer.initials} className="bg-dark-700 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-semibold text-white">
-                        {designer.name} {designer.surname}
-                      </h3>
-                      <span className="text-xs bg-blue-600 bg-opacity-20 text-blue-400 px-2 py-1 rounded">
-                        {designer.initials}
-                      </span>
-                    </div>
-                    <div className="text-sm text-gray-400 space-y-1">
-                      <p>Products: {designer.products.join(', ')}</p>
-                      <div className="flex justify-between">
-                        <span>Works across {designer.products.length} product{designer.products.length !== 1 ? 's' : ''}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-8 text-gray-400">
-                  <UsersIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>No designers found in this category.</p>
+                 <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+           {designerPerformances.map((designer, index) => (
+             <div key={`${designer.initials}-${designer.product}`}>
+               <DesignerPerformanceCard 
+                 designer={designer}
+                 rank={index + 1}
+                 view={designerView}
+               />
+             </div>
+           ))}
+        </div>
+      </div>
+
+      {/* Category Weekly Performance */}
+      <div className="bg-gray-900/50 border border-gray-700 rounded-xl p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold text-white">Category Weekly Performance</h2>
+          <div className="flex items-center space-x-2 text-sm text-gray-400">
+            <CalendarIcon className="h-5 w-5" />
+            <span>Last 25 weeks</span>
+          </div>
+        </div>
+        
+        <div className="h-80">
+          <WeeklyPerformanceChart data={weeklyData} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Product Comparison Chart Component
+function ProductComparisonChart({ 
+  productComparisons, 
+  chartView 
+}: { 
+  productComparisons: ProductWeeklyData[], 
+  chartView: 'spend' | 'ads' | 'ratio' 
+}) {
+  if (!productComparisons.length) {
+    return (
+      <div className="flex items-center justify-center h-full text-gray-400">
+        No data available for comparison
+      </div>
+    )
+  }
+
+  const getChartData = () => {
+    const allWeeks = [...new Set(
+      productComparisons.flatMap(p => p.weeklyData.map(w => w.week))
+    )].sort()
+
+    return allWeeks.map(week => {
+      const dataPoint: any = { week }
+      
+      productComparisons.forEach(product => {
+        const weekData = product.weeklyData.find(w => w.week === week)
+        if (weekData) {
+          switch (chartView) {
+            case 'spend':
+              dataPoint[product.productName] = weekData.spend
+              break
+            case 'ads':
+              dataPoint[product.productName] = weekData.adsCount
+              break
+            case 'ratio':
+              const total = weekData.videoAds + weekData.imageAds
+              dataPoint[product.productName] = total > 0 ? (weekData.videoAds / total) * 100 : 0
+              break
+          }
+        } else {
+          dataPoint[product.productName] = 0
+        }
+      })
+      
+      return dataPoint
+    })
+  }
+
+  const data = getChartData()
+
+  return (
+    <div className="w-full h-full">
+      {/* This would integrate with your existing chart library */}
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <div className="text-white text-lg mb-2">Product Comparison Chart</div>
+          <div className="text-gray-400 text-sm">
+            Showing {chartView} comparison across {productComparisons.length} products
+          </div>
+          <div className="mt-4 flex flex-wrap justify-center gap-4">
+            {productComparisons.map(product => (
+              <div key={product.productName} className="flex items-center space-x-2">
+                <div 
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: product.color }}
+                />
+                <span className="text-gray-300 text-sm">{product.productName}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Designer Performance Card Component
+function DesignerPerformanceCard({ 
+  designer, 
+  rank, 
+  view 
+}: { 
+  designer: DesignerPerformance, 
+  rank: number, 
+  view: 'ads' | 'scaling' | 'spend' 
+}) {
+  const getRankColor = (rank: number) => {
+    if (rank === 1) return 'from-yellow-500 to-yellow-600'
+    if (rank === 2) return 'from-gray-400 to-gray-500'
+    if (rank === 3) return 'from-amber-600 to-amber-700'
+    return 'from-gray-600 to-gray-700'
+  }
+
+  const getMetricValue = () => {
+    switch (view) {
+      case 'scaling':
+        return `${designer.scalingRate.toFixed(1)}%`
+      case 'ads':
+        return designer.totalAds.toString()
+      case 'spend':
+        return new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD',
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0
+        }).format(designer.totalSpend)
+    }
+  }
+
+  const getMetricLabel = () => {
+    switch (view) {
+      case 'scaling':
+        return 'Scaling Rate'
+      case 'ads':
+        return 'Total Ads'
+      case 'spend':
+        return 'Total Spend'
+    }
+  }
+
+  return (
+    <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-6 hover:border-purple-500/50 transition-colors">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center space-x-3">
+          <div className={`w-8 h-8 rounded-full bg-gradient-to-r ${getRankColor(rank)} flex items-center justify-center text-white font-bold text-sm`}>
+            #{rank}
+          </div>
+          <div>
+            <h3 className="font-semibold text-white">{designer.name}</h3>
+            <p className="text-sm text-gray-400">{designer.product}</p>
+          </div>
+        </div>
+        <div className="bg-purple-600/20 text-purple-300 px-2 py-1 rounded text-xs font-medium">
+          {designer.initials}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="text-center">
+          <p className="text-2xl font-bold text-white">{getMetricValue()}</p>
+          <p className="text-xs text-gray-400">{getMetricLabel()}</p>
+        </div>
+        <div className="text-center">
+          <p className="text-2xl font-bold text-green-400">{designer.scaledAds}</p>
+          <p className="text-xs text-gray-400">Scaled Ads</p>
+        </div>
+      </div>
+
+      {designer.topAds.length > 0 && (
+        <div>
+          <h4 className="text-sm font-medium text-gray-300 mb-2">Top Performing Ads</h4>
+          <div className="space-y-2">
+            {designer.topAds.map((ad, index) => (
+              <div key={ad.id} className="flex items-center justify-between text-xs">
+                <div className="flex items-center space-x-2">
+                  <span className="text-gray-500">#{index + 1}</span>
+                  {ad.ad_type === 'video' ? (
+                    <PlayIcon className="h-3 w-3 text-blue-400" />
+                  ) : (
+                    <PhotoIcon className="h-3 w-3 text-green-400" />
+                  )}
+                  <span className="text-gray-300 truncate max-w-24">
+                    {ad.ad_name || 'Untitled'}
+                  </span>
                 </div>
-              )}
-            </div>
+                <span className="text-yellow-400 font-medium">
+                  ${Math.round(ad.spend).toLocaleString()}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 } 
