@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getServerSession } from 'next-auth'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -62,6 +63,80 @@ async function crawlProductWebsite(url: string) {
   } catch (error) {
     console.error('❌ Crawling error:', error)
     throw new Error(`Failed to crawl website: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
+// Function to save crawled data to database
+async function saveCrawledDataToDatabase(url: string, extractedData: any, userEmail: string | null = null) {
+  try {
+    console.log(`💾 Saving crawled data to database for: ${extractedData.productName}`)
+    
+    const crawledProduct = {
+      url: url,
+      product_name: extractedData.productName,
+      description: extractedData.description,
+      industry: extractedData.industry,
+      brand_color: extractedData.brandColor,
+      unique_selling_points: JSON.stringify(extractedData.uniqueSellingPoints),
+      benefits: JSON.stringify(extractedData.benefits),
+      pain_points: JSON.stringify(extractedData.painPoints),
+      target_audience: JSON.stringify(extractedData.targetAudience),
+      key_features: JSON.stringify(extractedData.keyFeatures),
+      cta_offers: JSON.stringify(extractedData.ctaOffers),
+      tone_of_voice: extractedData.toneOfVoice,
+      additional_context: extractedData.additionalContext,
+      pricing: JSON.stringify(extractedData.pricing),
+      competitors: JSON.stringify(extractedData.competitors),
+      category: extractedData.category,
+      meta_title: extractedData.metaTitle,
+      meta_description: extractedData.metaDescription,
+      images: JSON.stringify(extractedData.images),
+      logos: JSON.stringify(extractedData.logos),
+      created_by: userEmail,
+      crawl_status: 'success'
+    }
+    
+    // Use upsert to handle duplicate URLs
+    const { data, error } = await supabase
+      .from('crawled_products')
+      .upsert(crawledProduct, { 
+        onConflict: 'url',
+        ignoreDuplicates: false 
+      })
+      .select()
+      .single()
+    
+    if (error) {
+      console.error('❌ Database save error:', error)
+      throw new Error(`Failed to save to database: ${error.message}`)
+    }
+    
+    console.log(`✅ Successfully saved crawled data with ID: ${data.id}`)
+    return data
+    
+  } catch (error) {
+    console.error('❌ Database save error:', error)
+    throw error
+  }
+}
+
+// Function to check if URL was already crawled
+async function checkExistingCrawl(url: string) {
+  try {
+    const { data, error } = await supabase
+      .from('crawled_products')
+      .select('*')
+      .eq('url', url)
+      .single()
+    
+    if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+      throw error
+    }
+    
+    return data
+  } catch (error) {
+    console.log('No existing crawl found, proceeding with new crawl')
+    return null
   }
 }
 
@@ -446,7 +521,7 @@ function extractLogos(html: string, baseUrl: string): string[] {
 
 export async function POST(request: NextRequest) {
   try {
-    const { url } = await request.json()
+    const { url, forceRefresh = false } = await request.json()
     
     if (!url) {
       return NextResponse.json(
@@ -467,16 +542,96 @@ export async function POST(request: NextRequest) {
     
     console.log(`🚀 Starting crawl for: ${url}`)
     
+    // Get user session for tracking
+    const session = await getServerSession()
+    const userEmail = session?.user?.email || null
+    
+    // Check if URL was already crawled (unless force refresh is requested)
+    if (!forceRefresh) {
+      const existingCrawl = await checkExistingCrawl(url)
+      if (existingCrawl) {
+        console.log(`📚 Found existing crawl for: ${url}`)
+        
+        // Increment view count
+        await supabase.rpc('increment_crawled_product_views', { 
+          product_id: existingCrawl.id 
+        })
+        
+        // Parse JSON fields back to arrays/objects
+        const parsedData = {
+          ...existingCrawl,
+          uniqueSellingPoints: JSON.parse(existingCrawl.unique_selling_points),
+          benefits: JSON.parse(existingCrawl.benefits),
+          painPoints: JSON.parse(existingCrawl.pain_points),
+          targetAudience: JSON.parse(existingCrawl.target_audience),
+          keyFeatures: JSON.parse(existingCrawl.key_features),
+          ctaOffers: JSON.parse(existingCrawl.cta_offers),
+          pricing: JSON.parse(existingCrawl.pricing),
+          competitors: JSON.parse(existingCrawl.competitors),
+          images: JSON.parse(existingCrawl.images),
+          logos: JSON.parse(existingCrawl.logos)
+        }
+        
+        return NextResponse.json({
+          success: true,
+          data: parsedData,
+          message: 'Loaded from existing crawl data',
+          fromCache: true
+        })
+      }
+    }
+    
+    // Perform fresh crawl
     const extractedData = await crawlProductWebsite(url)
     
-    return NextResponse.json({
-      success: true,
-      data: extractedData,
-      message: 'Website successfully crawled and analyzed'
-    })
+    // Save to database
+    try {
+      const savedData = await saveCrawledDataToDatabase(url, extractedData, userEmail)
+      console.log(`✅ Successfully saved crawl data with ID: ${savedData.id}`)
+      
+      return NextResponse.json({
+        success: true,
+        data: extractedData,
+        message: 'Website successfully crawled and saved to database',
+        savedId: savedData.id,
+        fromCache: false
+      })
+      
+    } catch (dbError) {
+      console.error('❌ Database save failed, but crawl succeeded:', dbError)
+      
+      // Return crawled data even if database save failed
+      return NextResponse.json({
+        success: true,
+        data: extractedData,
+        message: 'Website successfully crawled (database save failed)',
+        warning: 'Data was not saved to library',
+        fromCache: false
+      })
+    }
     
   } catch (error) {
     console.error('❌ API Error:', error)
+    
+    // Try to save error to database for debugging
+    try {
+      const { url } = await request.json()
+      const session = await getServerSession()
+      
+      await supabase
+        .from('crawled_products')
+        .upsert({
+          url: url,
+          product_name: 'Failed Crawl',
+          crawl_status: 'error',
+          crawl_error: error instanceof Error ? error.message : 'Unknown error',
+          created_by: session?.user?.email || null
+        }, { onConflict: 'url' })
+        
+    } catch (logError) {
+      console.error('Failed to log error to database:', logError)
+    }
+    
     return NextResponse.json(
       { 
         error: 'Failed to crawl website',

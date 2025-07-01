@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { 
   GlobeAltIcon,
@@ -12,7 +12,12 @@ import {
   CloudArrowUpIcon,
   ExclamationTriangleIcon,
   CheckCircleIcon,
-  XMarkIcon
+  XMarkIcon,
+  BookOpenIcon,
+  EyeIcon,
+  CalendarIcon,
+  TrashIcon,
+  ArrowPathIcon
 } from '@heroicons/react/24/outline'
 
 interface ExtractedData {
@@ -68,11 +73,33 @@ export default function BrandAssetsPage() {
   // Edit states for extracted data
   const [editableData, setEditableData] = useState<ExtractedData | null>(null)
   
+  // Library state
+  const [libraryProducts, setLibraryProducts] = useState<any[]>([])
+  const [libraryLoading, setLibraryLoading] = useState(false)
+  const [librarySearch, setLibrarySearch] = useState('')
+  const [libraryFilters, setLibraryFilters] = useState({
+    industry: '',
+    category: '',
+    sortBy: 'crawled_at',
+    sortOrder: 'desc'
+  })
+  const [libraryPagination, setLibraryPagination] = useState({
+    page: 1,
+    limit: 12,
+    total: 0,
+    pages: 0
+  })
+  const [availableFilters, setAvailableFilters] = useState({
+    industries: [] as string[],
+    categories: [] as string[]
+  })
+  
   // File upload ref
   const fileInputRef = useRef<HTMLInputElement>(null)
   
   const tabs = [
     { id: 'crawler', name: 'Web Crawler', icon: GlobeAltIcon },
+    { id: 'library', name: 'Library', icon: BookOpenIcon },
     { id: 'product-info', name: 'Product Info', icon: DocumentTextIcon },
     { id: 'marketing', name: 'Marketing Insights', icon: SparklesIcon },
     { id: 'features', name: 'Features & CTAs', icon: CogIcon },
@@ -168,6 +195,99 @@ export default function BrandAssetsPage() {
       .substring(0, 3)
   }
   
+  // Library functions
+  const fetchLibraryProducts = async (resetPage = false) => {
+    setLibraryLoading(true)
+    
+    try {
+      const page = resetPage ? 1 : libraryPagination.page
+      const params = new URLSearchParams({
+        search: librarySearch,
+        industry: libraryFilters.industry,
+        category: libraryFilters.category,
+        sortBy: libraryFilters.sortBy,
+        sortOrder: libraryFilters.sortOrder,
+        page: page.toString(),
+        limit: libraryPagination.limit.toString()
+      })
+      
+      const response = await fetch(`/api/brand-assets/library?${params}`)
+      const result = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to fetch library')
+      }
+      
+      setLibraryProducts(result.data)
+      setLibraryPagination(result.pagination)
+      setAvailableFilters(result.filters)
+      
+    } catch (err) {
+      console.error('❌ Library fetch error:', err)
+      setError(err instanceof Error ? err.message : 'Failed to fetch library')
+    } finally {
+      setLibraryLoading(false)
+    }
+  }
+  
+  const loadProductFromLibrary = async (productId: number) => {
+    try {
+      const response = await fetch(`/api/brand-assets/library/${productId}`)
+      const result = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to load product')
+      }
+      
+      setExtractedData(result.data)
+      setEditableData(result.data)
+      setActiveTab('product-info')
+      
+    } catch (err) {
+      console.error('❌ Product load error:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load product')
+    }
+  }
+  
+  const deleteProductFromLibrary = async (productId: number) => {
+    try {
+      const response = await fetch(`/api/brand-assets/library?id=${productId}`, {
+        method: 'DELETE'
+      })
+      
+      const result = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to delete product')
+      }
+      
+      // Refresh library
+      fetchLibraryProducts()
+      
+    } catch (err) {
+      console.error('❌ Product delete error:', err)
+      setError(err instanceof Error ? err.message : 'Failed to delete product')
+    }
+  }
+  
+  // Load library when library tab is active
+  useEffect(() => {
+    if (activeTab === 'library') {
+      fetchLibraryProducts(true)
+    }
+  }, [activeTab])
+  
+  // Debounced search effect
+  useEffect(() => {
+    if (activeTab === 'library') {
+      const timeoutId = setTimeout(() => {
+        fetchLibraryProducts(true)
+      }, 500)
+      
+      return () => clearTimeout(timeoutId)
+    }
+  }, [librarySearch, libraryFilters])
+  
   const renderTabContent = () => {
     switch (activeTab) {
       case 'crawler':
@@ -255,6 +375,234 @@ export default function BrandAssetsPage() {
                 <p className="text-gray-400 text-sm">Images, logos, and uploadable brand assets</p>
               </div>
             </div>
+          </div>
+        )
+        
+      case 'library':
+        return (
+          <div className="space-y-6">
+            {/* Header with Search and Filters */}
+            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
+              <div>
+                <h3 className="text-2xl font-bold text-white mb-2">Crawled Products Library</h3>
+                <p className="text-gray-400">Browse and load previously crawled product data</p>
+              </div>
+              
+              <button
+                onClick={() => fetchLibraryProducts(true)}
+                disabled={libraryLoading}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg transition-colors flex items-center gap-2"
+              >
+                <ArrowPathIcon className={`h-4 w-4 ${libraryLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
+            
+            {/* Search and Filters */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {/* Search */}
+              <div className="md:col-span-2">
+                <input
+                  type="text"
+                  value={librarySearch}
+                  onChange={(e) => setLibrarySearch(e.target.value)}
+                  placeholder="Search products, URLs, or descriptions..."
+                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              
+              {/* Industry Filter */}
+              <div>
+                <select
+                  value={libraryFilters.industry}
+                  onChange={(e) => setLibraryFilters({...libraryFilters, industry: e.target.value})}
+                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">All Industries</option>
+                  {availableFilters.industries.map(industry => (
+                    <option key={industry} value={industry}>{industry}</option>
+                  ))}
+                </select>
+              </div>
+              
+              {/* Sort */}
+              <div>
+                <select
+                  value={`${libraryFilters.sortBy}-${libraryFilters.sortOrder}`}
+                  onChange={(e) => {
+                    const [sortBy, sortOrder] = e.target.value.split('-')
+                    setLibraryFilters({...libraryFilters, sortBy, sortOrder})
+                  }}
+                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="crawled_at-desc">Newest First</option>
+                  <option value="crawled_at-asc">Oldest First</option>
+                  <option value="product_name-asc">Name A-Z</option>
+                  <option value="product_name-desc">Name Z-A</option>
+                  <option value="view_count-desc">Most Viewed</option>
+                </select>
+              </div>
+            </div>
+            
+            {/* Results */}
+            {libraryLoading ? (
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                <p className="text-gray-400">Loading crawled products...</p>
+              </div>
+            ) : libraryProducts.length === 0 ? (
+              <div className="text-center py-12">
+                <BookOpenIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-white mb-2">No Products Found</h3>
+                <p className="text-gray-400 mb-4">No crawled products match your current search and filters.</p>
+                <button
+                  onClick={() => {
+                    setLibrarySearch('')
+                    setLibraryFilters({
+                      industry: '',
+                      category: '',
+                      sortBy: 'crawled_at',
+                      sortOrder: 'desc'
+                    })
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  Clear Filters
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Products Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {libraryProducts.map((product) => (
+                    <div key={product.id} className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden hover:border-gray-600 transition-colors">
+                      {/* Product Image */}
+                      <div className="h-32 bg-gradient-to-br from-gray-700 to-gray-800 relative overflow-hidden">
+                        {product.images && product.images.length > 0 ? (
+                          <img
+                            src={product.images[0]}
+                            alt={product.product_name}
+                            className="w-full h-full object-cover"
+                            onError={(e: any) => {
+                              e.target.style.display = 'none'
+                            }}
+                          />
+                        ) : (
+                          <div className="flex items-center justify-center h-full">
+                            <GlobeAltIcon className="h-12 w-12 text-gray-500" />
+                          </div>
+                        )}
+                        
+                        {/* Brand Color Indicator */}
+                        <div 
+                          className="absolute top-2 right-2 w-4 h-4 rounded-full border-2 border-white"
+                          style={{ backgroundColor: product.brand_color }}
+                        ></div>
+                      </div>
+                      
+                      {/* Product Info */}
+                      <div className="p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <h4 className="font-semibold text-white truncate flex-1">{product.product_name}</h4>
+                          <span className="text-xs text-blue-400 bg-blue-900/30 px-2 py-1 rounded ml-2 whitespace-nowrap">
+                            {product.industry}
+                          </span>
+                        </div>
+                        
+                        <p className="text-gray-400 text-sm mb-3 line-clamp-2">
+                          {product.description || 'No description available'}
+                        </p>
+                        
+                        {/* Meta Information */}
+                        <div className="flex items-center gap-4 text-xs text-gray-500 mb-4">
+                          <div className="flex items-center gap-1">
+                            <EyeIcon className="h-3 w-3" />
+                            {product.view_count || 0}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <CalendarIcon className="h-3 w-3" />
+                            {new Date(product.crawled_at).toLocaleDateString()}
+                          </div>
+                        </div>
+                        
+                        {/* URL */}
+                        <div className="mb-4">
+                          <a
+                            href={product.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 text-xs truncate block"
+                          >
+                            {product.url}
+                          </a>
+                        </div>
+                        
+                        {/* Actions */}
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => loadProductFromLibrary(product.id)}
+                            className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
+                          >
+                            Load Data
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm('Are you sure you want to delete this crawled product?')) {
+                                deleteProductFromLibrary(product.id)
+                              }
+                            }}
+                            className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Pagination */}
+                {libraryPagination.pages > 1 && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-gray-400 text-sm">
+                      Showing {((libraryPagination.page - 1) * libraryPagination.limit) + 1} to{' '}
+                      {Math.min(libraryPagination.page * libraryPagination.limit, libraryPagination.total)} of{' '}
+                      {libraryPagination.total} products
+                    </p>
+                    
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          const newPage = libraryPagination.page - 1
+                          setLibraryPagination({...libraryPagination, page: newPage})
+                          fetchLibraryProducts()
+                        }}
+                        disabled={libraryPagination.page <= 1}
+                        className="px-3 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 text-white rounded-lg transition-colors"
+                      >
+                        Previous
+                      </button>
+                      
+                      <span className="px-3 py-2 bg-blue-600 text-white rounded-lg">
+                        {libraryPagination.page} of {libraryPagination.pages}
+                      </span>
+                      
+                      <button
+                        onClick={() => {
+                          const newPage = libraryPagination.page + 1
+                          setLibraryPagination({...libraryPagination, page: newPage})
+                          fetchLibraryProducts()
+                        }}
+                        disabled={libraryPagination.page >= libraryPagination.pages}
+                        className="px-3 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 text-white rounded-lg transition-colors"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )
         
