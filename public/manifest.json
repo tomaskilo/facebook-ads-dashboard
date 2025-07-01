@@ -1,0 +1,26 @@
+{
+  "name": "Toka Analysis - Advanced Facebook Ads Analytics",
+  "short_name": "Toka Analysis",
+  "description": "Professional Facebook ads performance tracking and analysis dashboard",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#1e293b",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ],
+  "categories": ["business", "productivity", "analytics"],
+  "lang": "en"
+} 
