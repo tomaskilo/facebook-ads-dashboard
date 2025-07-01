@@ -80,7 +80,7 @@ export default function UploadDataModal({ onClose, products }: UploadDataModalPr
     return getAllProducts().find(p => p.initials.toUpperCase() === initials.toUpperCase())
   }
 
-  // Auto-create a new product with smart defaults
+  // Auto-create a new product with smart defaults or fetch existing one
   const autoCreateProduct = async (initials: string): Promise<Product | null> => {
     try {
       console.log(`🚀 Auto-creating product with initials: ${initials}`)
@@ -103,6 +103,32 @@ export default function UploadDataModal({ onClose, products }: UploadDataModalPr
 
       if (!response.ok) {
         const errorData = await response.json()
+        
+        // If product already exists (409 conflict), fetch it instead of failing
+        if (response.status === 409) {
+          console.log(`📋 Product ${initials} already exists, fetching from database...`)
+          
+          try {
+            // Fetch the existing product from the database
+            const fetchResponse = await fetch(`/api/products`)
+            if (fetchResponse.ok) {
+              const allProducts = await fetchResponse.json()
+              const existingProduct = allProducts.find((p: Product) => 
+                p.initials.toUpperCase() === initials.toUpperCase()
+              )
+              
+              if (existingProduct) {
+                console.log(`✅ Found existing product: ${existingProduct.name} (${initials})`)
+                // Add to our local created products list so it's available for uploads
+                setCreatedProducts(prev => [...prev, existingProduct])
+                return existingProduct
+              }
+            }
+          } catch (fetchError) {
+            console.error('❌ Failed to fetch existing product:', fetchError)
+          }
+        }
+        
         throw new Error(errorData.error || 'Failed to create product')
       }
 

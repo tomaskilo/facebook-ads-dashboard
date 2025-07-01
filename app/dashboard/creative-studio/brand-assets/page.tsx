@@ -187,7 +187,11 @@ export default function BrandAssetsPage() {
     updateEditableData(field, currentList.filter((_, i) => i !== index))
   }
   
-  const generateInitials = (productName: string): string => {
+  const generateInitials = (productName: string | undefined | null): string => {
+    if (!productName || typeof productName !== 'string') {
+      return 'UNK'
+    }
+    
     return productName
       .split(' ')
       .map(word => word.charAt(0).toUpperCase())
