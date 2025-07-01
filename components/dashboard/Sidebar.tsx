@@ -34,8 +34,23 @@ const products = [
 export default function Sidebar() {
   const [showAddProductModal, setShowAddProductModal] = useState(false)
   const [showUploadDataModal, setShowUploadDataModal] = useState(false)
+  const [productsList, setProductsList] = useState(products)
   const pathname = usePathname()
   const { data: session } = useSession()
+
+  const handleProductAdded = (product: { name: string; initials: string; category: string }) => {
+    // Add the new product to the list
+    const newProduct = {
+      name: product.name,
+      href: `/dashboard/products/${product.initials.toLowerCase()}`,
+      category: product.category,
+      status: 'active' as const
+    }
+    setProductsList(prev => [...prev, newProduct])
+    
+    // Show success message
+    console.log(`✅ Product "${product.name}" added successfully!`)
+  }
 
   return (
     <>
@@ -76,19 +91,21 @@ export default function Sidebar() {
               <li>
                 <div className="text-xs font-semibold leading-6 text-slate-400">Products</div>
                 <ul role="list" className="-mx-2 mt-2 space-y-1">
-                  <li>
-                    <Link
-                      href="/dashboard/products/colonbroom"
-                      className={classNames(
-                        pathname.includes('/dashboard/products/colonbroom')
-                          ? 'bg-slate-800 text-white'
-                          : 'text-slate-400 hover:text-white hover:bg-slate-800',
-                        'group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold'
-                      )}
-                    >
-                      🌿 Colonbroom
-                    </Link>
-                  </li>
+                  {productsList.map((product) => (
+                    <li key={product.name}>
+                      <Link
+                        href={product.href}
+                        className={classNames(
+                          pathname.includes(product.href)
+                            ? 'bg-slate-800 text-white'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800',
+                          'group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold'
+                        )}
+                      >
+                        {product.name === 'Colonbroom' ? '🌿' : '💊'} {product.name}
+                      </Link>
+                    </li>
+                  ))}
                   <li>
                     <button
                       onClick={() => setShowAddProductModal(true)}
@@ -162,7 +179,8 @@ export default function Sidebar() {
       {showAddProductModal && (
         <AddProductModal 
           isOpen={showAddProductModal}
-          onClose={() => setShowAddProductModal(false)} 
+          onClose={() => setShowAddProductModal(false)}
+          onProductAdded={handleProductAdded}
         />
       )}
       {showUploadDataModal && (

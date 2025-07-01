@@ -1,252 +1,179 @@
 'use client'
 
-import { useState } from 'react'
-import { Dialog } from '@headlessui/react'
-import { XMarkIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline'
-import { useDropzone } from 'react-dropzone'
-import Papa from 'papaparse'
-// import { supabase } from '@/lib/supabase' // Temporarily disabled - migrating to NextAuth
-import { CSVUploadData } from '@/types'
+import React, { useState } from 'react'
+import { X } from 'lucide-react'
 
 interface AddProductModalProps {
   isOpen: boolean
   onClose: () => void
+  onProductAdded: (product: { name: string; initials: string; category: string }) => void
 }
 
-export default function AddProductModal({ isOpen, onClose }: AddProductModalProps) {
-  const [step, setStep] = useState(1)
-  const [productData, setProductData] = useState({
+const CATEGORIES = [
+  'Ecommerce',
+  'Ecom Accelerator', 
+  'Go Health',
+  'WMA',
+  'Beyond Wellness'
+]
+
+export default function AddProductModal({ isOpen, onClose, onProductAdded }: AddProductModalProps) {
+  const [formData, setFormData] = useState({
     name: '',
-    category: '',
-    website: '',
-    namingConvention: ''
+    initials: '',
+    category: ''
   })
-  const [csvData, setCsvData] = useState<CSVUploadData[]>([])
-  const [csvFileName, setCsvFileName] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const categories = [
-    'Digestive Health',
-    'Weight Loss',
-    'General Health',
-    'Beauty & Skincare',
-    'Fitness & Nutrition'
-  ]
+  if (!isOpen) return null
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    accept: {
-      'text/csv': ['.csv']
-    },
-    maxFiles: 1,
-    onDrop: (acceptedFiles) => {
-      const file = acceptedFiles[0]
-      if (file) {
-        setCsvFileName(file.name)
-        Papa.parse(file, {
-          header: true,
-          complete: (results) => {
-            const data = results.data as any[]
-            const processedData = data.map((row, index) => ({
-              adName: row['Ad Name'] || '',
-              adsetName: row['Adset Name'] || '',
-              creativeType: row['Creative Type'] || '',
-              spendUsd: parseFloat(row['Spend In USD']) || 0,
-              impressions: parseInt(row['Impressions']) || 0,
-              firstAdSpendDate: row['First Ad Spend Date'] || '',
-              lastAdSpendDate: row['Last Ad Spend Date'] || '',
-              daysAdSpending: parseInt(row['Days ad spending']) || 0
-            }))
-            setCsvData(processedData)
-          },
-          error: (error) => {
-            setError('Error parsing CSV file: ' + error.message)
-          }
-        })
-      }
-    }
-  })
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: any) => {
     e.preventDefault()
-    setLoading(true)
+    setIsLoading(true)
     setError('')
 
     try {
-      // TODO: Implement with NextAuth + Database of choice
-      // Temporarily showing success message instead of database operations
-      
-      alert(`Product "${productData.name}" would be created with ${csvData.length} ads. Database functionality temporarily disabled during migration to NextAuth.`)
-      
+      const response = await fetch('/api/products/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to create product')
+      }
+
+      const result = await response.json()
+      onProductAdded(formData)
       onClose()
-      setStep(1)
-      setProductData({ name: '', category: '', website: '', namingConvention: '' })
-      setCsvData([])
-      setCsvFileName('')
-    } catch (err: any) {
-      setError(err.message)
+      
+      // Reset form
+      setFormData({
+        name: '',
+        initials: '',
+        category: ''
+      })
+    } catch (error) {
+      console.error('Error creating product:', error)
+      setError(error instanceof Error ? error.message : 'Failed to create product')
     } finally {
-      setLoading(false)
+      setIsLoading(false)
     }
   }
 
-  const nextStep = () => {
-    if (step === 1 && productData.name && productData.category) {
-      setStep(2)
-    }
+  const handleInputChange = (e: any) => {
+    const { name, value } = e.target
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }))
+  }
+
+  const handleInitialsChange = (e: any) => {
+    const { name, value } = e.target
+    setFormData(prev => ({
+      ...prev,
+      [name]: value.toUpperCase()
+    }))
   }
 
   return (
-    <Dialog open={isOpen} onClose={onClose} className="relative z-50">
-      <div className="fixed inset-0 bg-black bg-opacity-75" aria-hidden="true" />
-      
-      <div className="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Panel className="mx-auto max-w-2xl w-full bg-dark-800 rounded-lg p-6">
-          <div className="flex justify-between items-center mb-6">
-            <Dialog.Title className="text-xl font-bold text-white">
-              Add New Product
-            </Dialog.Title>
-            <button onClick={onClose} className="text-gray-400 hover:text-white">
-              <XMarkIcon className="w-6 h-6" />
-            </button>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold text-gray-900">Add New Product</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <X size={24} />
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+              Product Name
+            </label>
+            <input
+              type="text"
+              id="name"
+              name="name"
+              value={formData.name}
+              onChange={handleInputChange}
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="e.g., Bioma"
+            />
           </div>
 
-          {error && (
-            <div className="bg-red-600 bg-opacity-20 border border-red-600 text-red-400 px-4 py-2 rounded mb-4">
-              {error}
-            </div>
-          )}
+          <div>
+            <label htmlFor="initials" className="block text-sm font-medium text-gray-700 mb-1">
+              Product Initials
+            </label>
+            <input
+              type="text"
+              id="initials"
+              name="initials"
+              value={formData.initials}
+              onChange={handleInitialsChange}
+              required
+              maxLength={5}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="e.g., BI"
+              style={{ textTransform: 'uppercase' }}
+            />
+          </div>
 
-          {step === 1 && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  Product Name
-                </label>
-                <input
-                  type="text"
-                  value={productData.name}
-                  onChange={(e) => setProductData({ ...productData, name: e.target.value })}
-                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="e.g. Bioma"
-                  required
-                />
-              </div>
+          <div>
+            <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
+              Category
+            </label>
+            <select
+              id="category"
+              name="category"
+              value={formData.category}
+              onChange={handleInputChange}
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="" disabled>Select a category</option>
+              {CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  Category
-                </label>
-                <select
-                  value={productData.category}
-                  onChange={(e) => setProductData({ ...productData, category: e.target.value })}
-                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  required
-                >
-                  <option value="">Select Category</option>
-                  {categories.map(category => (
-                    <option key={category} value={category}>{category}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  Website (Optional)
-                </label>
-                <input
-                  type="url"
-                  value={productData.website}
-                  onChange={(e) => setProductData({ ...productData, website: e.target.value })}
-                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="https://example.com"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  Naming Convention
-                </label>
-                <textarea
-                  value={productData.namingConvention}
-                  onChange={(e) => setProductData({ ...productData, namingConvention: e.target.value })}
-                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  rows={3}
-                  placeholder="BI_F-WL1932_2025_AL_W03-4_FB_982_ER_IMG_1x1_New_420_HE-3007_BC-508_CTA-1384_P-GLP1_M-TR_E-BADGE3_C-CompetitorAds_S-Limited_S-3_Red_T-4_V01"
-                />
-              </div>
-
-              <button
-                onClick={nextStep}
-                disabled={!productData.name || !productData.category}
-                className="w-full btn-primary disabled:opacity-50"
-              >
-                Next: Upload CSV Data
-              </button>
-            </div>
-          )}
-
-          {step === 2 && (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Upload CSV File
-                </label>
-                <div
-                  {...getRootProps()}
-                  className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-                    isDragActive 
-                      ? 'border-primary-500 bg-primary-500 bg-opacity-10' 
-                      : 'border-dark-600 hover:border-dark-500'
-                  }`}
-                >
-                  <input {...getInputProps()} />
-                  <CloudArrowUpIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  {csvFileName ? (
-                    <p className="text-white font-medium">File: {csvFileName}</p>
-                  ) : (
-                    <div>
-                      <p className="text-white font-medium mb-2">
-                        {isDragActive ? 'Drop the CSV file here' : 'Drag & drop CSV file here'}
-                      </p>
-                      <p className="text-gray-400 text-sm">or click to select file</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {csvData.length > 0 && (
-                <div className="bg-dark-700 rounded-lg p-4">
-                  <p className="text-white font-medium mb-2">
-                    CSV Data Preview ({csvData.length} rows)
-                  </p>
-                  <div className="text-sm text-gray-300 space-y-1">
-                    <p>First ad: {csvData[0]?.adName}</p>
-                    <p>Total spend: ${csvData.reduce((sum, row) => sum + row.spendUsd, 0).toLocaleString()}</p>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-4">
-                <button
-                  type="button"
-                  onClick={() => setStep(1)}
-                  className="flex-1 btn-secondary"
-                >
-                  Back
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading || csvData.length === 0}
-                  className="flex-1 btn-primary disabled:opacity-50"
-                >
-                  {loading ? 'Creating...' : 'Create Product'}
-                </button>
-              </div>
-            </form>
-          )}
-        </Dialog.Panel>
+          <div className="flex justify-end space-x-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isLoading || !formData.name || !formData.initials || !formData.category}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-md transition-colors"
+            >
+              {isLoading ? 'Creating...' : 'Create Product'}
+            </button>
+          </div>
+        </form>
       </div>
-    </Dialog>
+    </div>
   )
 } 
