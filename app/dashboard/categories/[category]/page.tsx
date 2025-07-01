@@ -206,7 +206,12 @@ export default function CategoryPage() {
                 const perfResponse = await fetch(`/api/products/${product.name.toLowerCase()}/designer-performance/${designer.initials}`)
                 if (perfResponse.ok) {
                   const perfResponseData = await perfResponse.json()
-                  const performance = perfResponseData.performance || perfResponseData
+                  
+                  // Calculate total scaled ads from weekly performance data
+                  const weeklyPerformance = perfResponseData.designerPerformance || []
+                  const totalScaledAds = weeklyPerformance.reduce((sum: number, week: any) => sum + (week.scaledAds || 0), 0)
+                  const totalAds = perfResponseData.totalAds || 0
+                  const totalSpend = perfResponseData.totalSpend || 0
                   
                   // Fetch top ads for this designer
                   const topAdsResponse = await fetch(`/api/products/${product.name.toLowerCase()}/top-ads?designer=${designer.initials}&limit=3`)
@@ -219,10 +224,10 @@ export default function CategoryPage() {
                     name: `${designer.name} ${designer.surname}`,
                     initials: designer.initials,
                     product: product.name,
-                    totalAds: performance.totalAds || 0,
-                    scaledAds: performance.scaledAds || 0,
-                    totalSpend: performance.totalSpend || 0,
-                    scalingRate: performance.totalAds > 0 ? (performance.scaledAds / performance.totalAds) * 100 : 0,
+                    totalAds: totalAds,
+                    scaledAds: totalScaledAds,
+                    totalSpend: totalSpend,
+                    scalingRate: totalAds > 0 ? (totalScaledAds / totalAds) * 100 : 0,
                     topAds: topAds.slice(0, 3) || []
                   })
                 }
