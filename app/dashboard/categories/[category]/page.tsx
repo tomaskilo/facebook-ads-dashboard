@@ -86,7 +86,7 @@ export default function CategoryPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [chartView, setChartView] = useState<'spend' | 'ads' | 'ratio'>('spend')
-  const [designerView, setDesignerView] = useState<'ads' | 'scaling' | 'spend'>('scaling')
+  const [designerView, setDesignerView] = useState<string>('scaled')
 
   // Color palette for product comparisons
   const colors = [
@@ -427,12 +427,12 @@ export default function CategoryPage() {
           <h2 className="text-2xl font-bold text-white">Designer Performance Analysis</h2>
           <div className="flex bg-gray-800 rounded-lg p-1">
             <button
-              onClick={() => setDesignerView('scaling')}
+              onClick={() => setDesignerView('scaled')}
               className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                designerView === 'scaling' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
+                designerView === 'scaled' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
               }`}
             >
-              Scaling Rate
+              Scaled Ads
             </button>
             <button
               onClick={() => setDesignerView('ads')}
@@ -567,102 +567,89 @@ function ProductComparisonChart({
 }
 
 // Designer Performance Card Component
-function DesignerPerformanceCard({ 
-  designer, 
-  rank, 
-  view 
-}: { 
-  designer: DesignerPerformance, 
-  rank: number, 
-  view: 'ads' | 'scaling' | 'spend' 
-}) {
-  const getRankColor = (rank: number) => {
-    if (rank === 1) return 'from-yellow-500 to-yellow-600'
-    if (rank === 2) return 'from-gray-400 to-gray-500'
-    if (rank === 3) return 'from-amber-600 to-amber-700'
-    return 'from-gray-600 to-gray-700'
-  }
-
+const DesignerPerformanceCard = ({ designer, rank, view }: { designer: DesignerPerformance; rank: number; view: string }) => {
   const getMetricValue = () => {
     switch (view) {
-      case 'scaling':
-        return `${designer.scalingRate.toFixed(1)}%`
-      case 'ads':
-        return designer.totalAds.toString()
       case 'spend':
-        return new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD',
-          minimumFractionDigits: 0,
-          maximumFractionDigits: 0
-        }).format(designer.totalSpend)
+        return `$${designer.totalSpend.toLocaleString()}`
+      case 'ads':
+        return designer.totalAds.toLocaleString()
+      case 'scaled':
+        return designer.scaledAds.toLocaleString()
+      default:
+        return designer.totalAds.toLocaleString()
     }
   }
 
-  const getMetricLabel = () => {
-    switch (view) {
-      case 'scaling':
-        return 'Scaling Rate'
-      case 'ads':
-        return 'Total Ads'
-      case 'spend':
-        return 'Total Spend'
-    }
+  const getScalingRate = () => {
+    if (!designer.totalAds || designer.totalAds === 0) return 0
+    return Math.round((designer.scaledAds / designer.totalAds) * 100)
   }
+
+  const scalingRate = getScalingRate()
 
   return (
-    <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-6 hover:border-purple-500/50 transition-colors">
+    <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl p-6 border border-gray-700 hover:border-blue-500 transition-all duration-300">
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-3">
-          <div className={`w-8 h-8 rounded-full bg-gradient-to-r ${getRankColor(rank)} flex items-center justify-center text-white font-bold text-sm`}>
-            #{rank}
+        <div className="flex items-center gap-3">
+          <div className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold ${
+            rank === 1 ? 'bg-yellow-500 text-black' :
+            rank === 2 ? 'bg-gray-400 text-black' :
+            rank === 3 ? 'bg-orange-500 text-white' :
+            'bg-gray-600 text-white'
+          }`}>
+            {rank}
           </div>
           <div>
-            <h3 className="font-semibold text-white">{designer.name}</h3>
-            <p className="text-sm text-gray-400">{designer.product}</p>
+            <p className="font-semibold text-white">{designer.name}</p>
+            <p className="text-sm text-gray-400">{designer.product} • {designer.initials}</p>
           </div>
         </div>
-        <div className="bg-purple-600/20 text-purple-300 px-2 py-1 rounded text-xs font-medium">
-          {designer.initials}
-        </div>
+        <TrophyIcon className="h-5 w-5 text-yellow-500" />
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div className="text-center">
-          <p className="text-2xl font-bold text-white">{getMetricValue()}</p>
-          <p className="text-xs text-gray-400">{getMetricLabel()}</p>
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <span className="text-gray-400">Primary Metric</span>
+          <span className="text-xl font-bold text-white">{getMetricValue()}</span>
         </div>
-        <div className="text-center">
-          <p className="text-2xl font-bold text-green-400">{designer.scaledAds}</p>
-          <p className="text-xs text-gray-400">Scaled Ads</p>
-        </div>
-      </div>
 
-      {designer.topAds.length > 0 && (
-        <div>
-          <h4 className="text-sm font-medium text-gray-300 mb-2">Top Performing Ads</h4>
-          <div className="space-y-2">
-            {designer.topAds.map((ad, index) => (
-              <div key={ad.id} className="flex items-center justify-between text-xs">
-                <div className="flex items-center space-x-2">
-                  <span className="text-gray-500">#{index + 1}</span>
-                  {ad.ad_type === 'video' ? (
-                    <PlayIcon className="h-3 w-3 text-blue-400" />
-                  ) : (
-                    <PhotoIcon className="h-3 w-3 text-green-400" />
-                  )}
-                  <span className="text-gray-300 truncate max-w-24">
-                    {ad.ad_name || 'Untitled'}
-                  </span>
+        <div className="flex justify-between items-center">
+          <span className="text-gray-400">Scaling Rate</span>
+          <span className={`font-semibold ${
+            scalingRate >= 15 ? 'text-green-400' :
+            scalingRate >= 10 ? 'text-yellow-400' :
+            'text-red-400'
+          }`}>
+            {scalingRate}%
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-700">
+          <div>
+            <p className="text-xs text-gray-500">Total Ads</p>
+            <p className="font-semibold text-white">{designer.totalAds || 0}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Scaled Ads</p>
+            <p className="font-semibold text-green-400">{designer.scaledAds || 0}</p>
+          </div>
+        </div>
+
+        {designer.topAds && designer.topAds.length > 0 && (
+          <div className="pt-4 border-t border-gray-700">
+            <p className="text-xs text-gray-500 mb-2">Top Performing Ads</p>
+            <div className="space-y-1">
+              {designer.topAds.slice(0, 3).map((ad, index) => (
+                <div key={index} className="flex justify-between text-sm">
+                                     <span className="text-gray-400 truncate">{ad.ad_name?.substring(0, 20)}...</span>
+                  <span className="text-green-400">${ad.spend?.toLocaleString() || 0}</span>
                 </div>
-                <span className="text-yellow-400 font-medium">
-                  ${Math.round(ad.spend).toLocaleString()}
-                </span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 } 
