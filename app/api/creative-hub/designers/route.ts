@@ -33,9 +33,9 @@ export async function GET() {
     ]
 
     // Check if we have Creative Hub data but no individual designer attribution
+    let hasDesignerAttribution = false
     if (allAds.length > 0) {
-      // Test if any ads contain designer initials
-      const hasDesignerAttribution = allAds.some(ad => 
+      hasDesignerAttribution = allAds.some(ad => 
         ad.ad_name && (
           ad.ad_name.includes('_AS_') || 
           ad.ad_name.includes('_KZ_') || 
@@ -45,21 +45,9 @@ export async function GET() {
 
       if (!hasDesignerAttribution) {
         console.log(`⚠️  Found ${allAds.length} Creative Hub ads but no individual designer attribution in ad names`)
-        console.log('Creative Hub ads use different naming convention - returning placeholder designers')
-        
-        // Return placeholder designers showing that Creative Hub data exists but attribution is unavailable
-        return NextResponse.json(creativeHubDesigners.map(designer => ({
-          initials: designer.initials,
-          name: designer.name,
-          totalAds: 0,
-          totalSpend: 0,
-          activeWeeks: 0,
-          videoAds: 0,
-          imageAds: 0,
-          scaledAds: 0,
-          isPrePopulated: true,
-          note: 'Attribution unavailable - Creative Hub uses different naming convention'
-        })))
+        console.log('Creative Hub ads use different naming convention - will return zeros with attribution note')
+      } else {
+        console.log(`✅ Found ${allAds.length} Creative Hub ads with designer attribution`)
       }
     }
 
@@ -107,7 +95,7 @@ export async function GET() {
 
       console.log(`Designer ${initials} (${name}): ${totalAds} ads, $${totalSpend} spend, ${activeWeeks} weeks`)
 
-      return {
+      const designerData: any = {
         initials,
         name,
         totalAds,
@@ -118,6 +106,13 @@ export async function GET() {
         scaledAds,
         isPrePopulated: true
       }
+
+      // Add attribution note if no designer attribution is available
+      if (!hasDesignerAttribution && allAds.length > 0) {
+        designerData.note = 'Attribution unavailable - Creative Hub uses different naming convention'
+      }
+
+      return designerData
     })
 
     // Sort by total spend descending
