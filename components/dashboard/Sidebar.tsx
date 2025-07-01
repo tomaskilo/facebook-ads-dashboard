@@ -10,7 +10,9 @@ import {
   SwatchIcon,
   CogIcon,
   PlusIcon,
-  ArrowUpTrayIcon
+  ArrowUpTrayIcon,
+  ChevronRightIcon,
+  ChevronDownIcon
 } from '@heroicons/react/24/outline'
 import AddProductModal from '@/components/modals/AddProductModal'
 import UploadDataModal from '@/components/modals/UploadDataModal'
@@ -30,10 +32,20 @@ interface Product {
   created_at: string;
 }
 
+interface GroupedProducts {
+  [category: string]: Product[];
+}
+
+function classNames(...classes: string[]) {
+  return classes.filter(Boolean).join(' ')
+}
+
 export default function Sidebar() {
   const [showAddProductModal, setShowAddProductModal] = useState(false)
   const [showUploadDataModal, setShowUploadDataModal] = useState(false)
   const [productsList, setProductsList] = useState<Product[]>([])
+  const [groupedProducts, setGroupedProducts] = useState<GroupedProducts>({})
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [loadingProducts, setLoadingProducts] = useState(true)
   const pathname = usePathname()
   const { data: session } = useSession()
@@ -50,6 +62,30 @@ export default function Sidebar() {
       if (response.ok) {
         const products = await response.json()
         setProductsList(products)
+        
+        // Group products by category
+        const grouped = (products as Product[]).reduce((acc: GroupedProducts, product: Product) => {
+          if (!acc[product.category]) {
+            acc[product.category] = []
+          }
+          acc[product.category].push(product)
+          return acc
+        }, {})
+        
+        setGroupedProducts(grouped)
+        
+        // Auto-expand categories that have active products
+        const activeCategories = new Set<string>()
+        Object.entries(grouped).forEach(([category, categoryProducts]) => {
+          if (categoryProducts.some((product: Product) => 
+            pathname.includes(`/dashboard/products/${product.name.toLowerCase()}`) ||
+            pathname.includes(`/dashboard/categories/${category.toLowerCase()}`)
+          )) {
+            activeCategories.add(category)
+          }
+        })
+        setExpandedCategories(activeCategories)
+        
       } else {
         console.error('Failed to fetch products')
       }
@@ -68,6 +104,18 @@ export default function Sidebar() {
     console.log(`✅ Product "${product.name}" added successfully!`)
   }
 
+  // Get category icon
+  const getCategoryIcon = (category: string) => {
+    const icons: { [key: string]: string } = {
+      'Ecommerce': '🛒',
+      'Ecom Accelerator': '🚀',
+      'Go Health': '🏥',
+      'WMA': '⚖️',
+      'Beyond Wellness': '🌟'
+    }
+    return icons[category] || '📦'
+  }
+
   // Get product icon based on category
   const getProductIcon = (category: string, name: string) => {
     if (name.toLowerCase() === 'colonbroom') return '🌿'
@@ -76,6 +124,18 @@ export default function Sidebar() {
     if (category === 'WMA') return '⚖️'
     if (category === 'Beyond Wellness') return '🌟'
     return '📦'
+  }
+
+  const toggleCategory = (category: string) => {
+    setExpandedCategories(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(category)) {
+        newSet.delete(category)
+      } else {
+        newSet.add(category)
+      }
+      return newSet
+    })
   }
 
   return (
@@ -113,30 +173,70 @@ export default function Sidebar() {
                 </ul>
               </li>
               
-              {/* Products Section */}
+              {/* Categories Section */}
               <li>
-                <div className="text-xs font-semibold leading-6 text-slate-400">Products</div>
+                <div className="text-xs font-semibold leading-6 text-slate-400">Categories</div>
                 <ul role="list" className="-mx-2 mt-2 space-y-1">
                   {loadingProducts ? (
-                    <li className="text-slate-400 px-2 py-2 text-sm">Loading products...</li>
-                  ) : productsList.length > 0 ? (
-                    productsList.map((product) => (
-                      <li key={product.id}>
-                        <Link
-                          href={`/dashboard/products/${product.name.toLowerCase()}`}
-                          className={classNames(
-                            pathname.includes(`/dashboard/products/${product.name.toLowerCase()}`)
-                              ? 'bg-slate-800 text-white'
-                              : 'text-slate-400 hover:text-white hover:bg-slate-800',
-                            'group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold'
+                    <li className="text-slate-400 px-2 py-2 text-sm">Loading categories...</li>
+                  ) : Object.keys(groupedProducts).length > 0 ? (
+                    Object.entries(groupedProducts).map(([category, products]) => (
+                      <li key={category}>
+                        {/* Category Header */}
+                        <div className="flex flex-col">
+                          {/* Category Link + Toggle */}
+                          <div className="flex items-center">
+                            <Link
+                              href={`/dashboard/categories/${category.toLowerCase().replace(/\s+/g, '-')}`}
+                              className={classNames(
+                                pathname.includes(`/dashboard/categories/${category.toLowerCase().replace(/\s+/g, '-')}`)
+                                  ? 'bg-slate-800 text-white'
+                                  : 'text-slate-400 hover:text-white hover:bg-slate-800',
+                                'group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold flex-1'
+                              )}
+                            >
+                              {getCategoryIcon(category)} {category}
+                              <span className="ml-auto text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded-full">
+                                {products.length}
+                              </span>
+                            </Link>
+                            <button
+                              onClick={() => toggleCategory(category)}
+                              className="p-1 text-slate-400 hover:text-white"
+                            >
+                              {expandedCategories.has(category) ? (
+                                <ChevronDownIcon className="h-4 w-4" />
+                              ) : (
+                                <ChevronRightIcon className="h-4 w-4" />
+                              )}
+                            </button>
+                          </div>
+                          
+                          {/* Products Sub-menu */}
+                          {expandedCategories.has(category) && (
+                            <ul className="ml-6 mt-1 space-y-1">
+                              {products.map((product) => (
+                                <li key={product.id}>
+                                  <Link
+                                    href={`/dashboard/products/${product.name.toLowerCase()}`}
+                                    className={classNames(
+                                      pathname.includes(`/dashboard/products/${product.name.toLowerCase()}`)
+                                        ? 'bg-slate-800 text-white'
+                                        : 'text-slate-400 hover:text-white hover:bg-slate-700',
+                                      'group flex gap-x-3 rounded-md p-2 text-sm leading-6 pl-3'
+                                    )}
+                                  >
+                                    {getProductIcon(product.category, product.name)} {product.name}
+                                  </Link>
+                                </li>
+                              ))}
+                            </ul>
                           )}
-                        >
-                          {getProductIcon(product.category, product.name)} {product.name}
-                        </Link>
+                        </div>
                       </li>
                     ))
                   ) : (
-                    <li className="text-slate-400 px-2 py-2 text-sm">No products yet</li>
+                    <li className="text-slate-400 px-2 py-2 text-sm">No categories yet</li>
                   )}
                   <li>
                     <button
@@ -160,28 +260,26 @@ export default function Sidebar() {
                       className="text-slate-400 hover:text-white hover:bg-slate-800 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold w-full text-left"
                     >
                       <ArrowUpTrayIcon className="h-6 w-6 shrink-0" aria-hidden="true" />
-                      Upload Data
+                      Upload CSV Data
                     </button>
+                  </li>
+                  <li>
+                    <Link
+                      href="/dashboard/admin/products/new"
+                      className={classNames(
+                        pathname === '/dashboard/admin/products/new'
+                          ? 'bg-slate-800 text-white'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800',
+                        'group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold'
+                      )}
+                    >
+                      <CogIcon className="h-6 w-6 shrink-0" aria-hidden="true" />
+                      Admin Panel
+                    </Link>
                   </li>
                 </ul>
               </li>
 
-              <li className="mt-auto">
-                <Link
-                  href="/dashboard/settings"
-                  className={classNames(
-                    pathname === '/dashboard/settings'
-                      ? 'bg-slate-800 text-white'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800',
-                    'group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold'
-                  )}
-                >
-                  <CogIcon className="h-6 w-6 shrink-0" aria-hidden="true" />
-                  Settings
-                </Link>
-              </li>
-              
-              {/* User Profile */}
               <li className="-mx-6 mt-auto">
                 {session?.user && (
                   <div className="flex items-center gap-x-4 px-6 py-3 text-sm font-semibold leading-6 text-white">
@@ -223,8 +321,4 @@ export default function Sidebar() {
       )}
     </>
   )
-}
-
-function classNames(...classes: string[]) {
-  return classes.filter(Boolean).join(' ')
 } 
