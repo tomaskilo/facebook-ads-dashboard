@@ -376,19 +376,18 @@ export default function UploadDataModal({ onClose, products }: UploadDataModalPr
   const onDrop = async (acceptedFiles: File[]) => {
     setError('')
     
-    const newFiles: FileUploadStatus[] = []
-    
+    // Process files sequentially to avoid state conflicts
     for (const file of acceptedFiles) {
       // Validate file type
       if (!file.name.toLowerCase().endsWith('.csv')) {
-        newFiles.push({
+        setFiles(prev => [...prev, {
           file,
           status: 'error' as const,
           weekNumber: '',
           productInitials: '',
           tableName: '',
           message: 'File must be a CSV file'
-        })
+        }])
         continue
       }
 
@@ -396,14 +395,14 @@ export default function UploadDataModal({ onClose, products }: UploadDataModalPr
       const { weekNumber, productInitials } = extractFileInfo(file.name)
       
       if (!weekNumber || !productInitials) {
-        newFiles.push({
+        setFiles(prev => [...prev, {
           file,
           status: 'error' as const,
           weekNumber: '',
           productInitials: '',
           tableName: '',
           message: 'Invalid filename format. Use: {INITIALS} W{NUMBER}.csv (e.g., BI W04.csv, RH W01.csv)'
-        })
+        }])
         continue
       }
 
@@ -414,24 +413,21 @@ export default function UploadDataModal({ onClose, products }: UploadDataModalPr
         // Attempt to auto-create the product
         console.log(`🔄 Product with initials "${productInitials}" not found, attempting auto-creation...`)
         
-        newFiles.push({
+        // Add file with processing status first
+        setFiles(prev => [...prev, {
           file,
           status: 'processing' as const,
           weekNumber,
           productInitials,
           tableName: '',
           message: `Auto-creating product with initials "${productInitials}"...`
-        })
-        
-        // Set files immediately to show progress
-        setFiles(prev => [...prev, ...newFiles])
+        }])
         
         // Attempt auto-creation
         const createdProduct = await autoCreateProduct(productInitials)
         
         if (createdProduct) {
-          product = createdProduct
-          // Update the file status to success
+          // Update the specific file status to pending
           setFiles(prev => prev.map(f => 
             f.file === file && f.status === 'processing' 
               ? {
@@ -443,7 +439,7 @@ export default function UploadDataModal({ onClose, products }: UploadDataModalPr
               : f
           ))
         } else {
-          // Auto-creation failed
+          // Auto-creation failed, update status
           setFiles(prev => prev.map(f => 
             f.file === file && f.status === 'processing'
               ? {
@@ -454,66 +450,46 @@ export default function UploadDataModal({ onClose, products }: UploadDataModalPr
               : f
           ))
         }
-        continue
+      } else {
+        // Product found, add as pending
+        setFiles(prev => [...prev, {
+          file,
+          status: 'pending' as const,
+          weekNumber,
+          productInitials,
+          tableName: product.table_name,
+          message: `Ready to upload ${weekNumber} for ${product.name}`
+        }])
       }
-
-      // Product found, add as pending
-      newFiles.push({
-        file,
-        status: 'pending' as const,
-        weekNumber,
-        productInitials,
-        tableName: product.table_name,
-        message: `Ready to upload ${weekNumber} for ${product.name}`
-      })
     }
 
-    // Add remaining files that didn't require auto-creation
-    if (newFiles.length > 0) {
-      setFiles(prev => [...prev, ...newFiles])
-    }
+    // Validate for duplicates after all files are processed
+    setTimeout(() => {
+      setFiles(currentFiles => {
+        const productWeeks = new Map<string, string[]>()
+        
+        currentFiles.forEach(f => {
+          if (f.status === 'pending') {
+            const key = f.productInitials
+            if (!productWeeks.has(key)) {
+              productWeeks.set(key, [])
+            }
+            productWeeks.get(key)!.push(f.weekNumber)
+          }
+        })
 
-    // Check for duplicate week numbers within the same product (existing logic)
-    const allFiles = [...files, ...newFiles]
-    const productWeeks = new Map<string, string[]>()
-    
-    allFiles.forEach(f => {
-      if (f.status === 'pending') {
-        const key = f.productInitials
-        if (!productWeeks.has(key)) {
-          productWeeks.set(key, [])
+        // Check for duplicates
+        for (const [product, weeks] of productWeeks) {
+          const duplicates = weeks.filter((week, index) => weeks.indexOf(week) !== index)
+          if (duplicates.length > 0) {
+            setError(`Duplicate week numbers found for ${product}: ${duplicates.join(', ')}. Please remove duplicate files.`)
+            break
+          }
         }
-        productWeeks.get(key)!.push(f.weekNumber)
-      }
-    })
-
-    // Check for duplicates
-    for (const [product, weeks] of productWeeks) {
-      const duplicates = weeks.filter((week, index) => weeks.indexOf(week) !== index)
-      if (duplicates.length > 0) {
-        setError(`Duplicate week numbers found for ${product}: ${duplicates.join(', ')}. Please remove duplicate files.`)
-        return
-      }
-    }
-
-    // Check for duplicates with existing files
-    const existingProductWeeks = new Map<string, string[]>()
-    files.forEach(f => {
-      const key = f.productInitials
-      if (!existingProductWeeks.has(key)) {
-        existingProductWeeks.set(key, [])
-      }
-      existingProductWeeks.get(key)!.push(f.weekNumber)
-    })
-
-    for (const [product, weeks] of productWeeks) {
-      const existingWeeks = existingProductWeeks.get(product) || []
-      const conflicts = weeks.filter(week => existingWeeks.includes(week))
-      if (conflicts.length > 0) {
-        setError(`Week numbers already added for ${product}: ${conflicts.join(', ')}. Please remove duplicate files.`)
-        return
-      }
-    }
+        
+        return currentFiles
+      })
+    }, 100)
   }
 
   const removeFile = (index: number) => {
