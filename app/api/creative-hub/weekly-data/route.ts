@@ -7,11 +7,11 @@ export async function GET() {
 
     const supabase = createServiceSupabaseClient()
 
-    // Get all creative hub ads (is_creative_hub = 1 OR ad_name contains '_CHUB_')
+    // Get all creative hub ads (only properly marked ones)
     const { data: allAds, error: adsError } = await supabase
       .from('cb_ads_data')
       .select('*')
-      .or('is_creative_hub.eq.1,ad_name.ilike.%_CHUB_%')
+      .eq('is_creative_hub', 1)
       .order('week_number', { ascending: true })
 
     if (adsError) {
