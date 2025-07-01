@@ -139,7 +139,9 @@ export default function CategoryPage() {
           // Fetch product stats
           const statsResponse = await fetch(`/api/products/${product.name.toLowerCase()}/stats`)
           if (statsResponse.ok) {
-            const productStats = await statsResponse.json()
+            const statsResponseData = await statsResponse.json()
+            // Handle both direct object and nested stats object
+            const productStats = statsResponseData.stats || statsResponseData
             totalStats.totalSpend += productStats.totalSpend || 0
             totalStats.activeAds += productStats.activeAds || 0
             totalStats.scaledAds += productStats.scaledAds || 0
@@ -150,7 +152,11 @@ export default function CategoryPage() {
           // Fetch weekly data
           const weeklyResponse = await fetch(`/api/products/${product.name.toLowerCase()}/weekly-data`)
           if (weeklyResponse.ok) {
-            const productWeeklyData = await weeklyResponse.json()
+            const weeklyResponseData = await weeklyResponse.json()
+            // Handle both direct array and object with weeklyData property
+            const productWeeklyData = Array.isArray(weeklyResponseData) 
+              ? weeklyResponseData 
+              : (weeklyResponseData.weeklyData || weeklyResponseData.data || [])
             
             // Store for product comparison
             productWeeklyComparisons.push({
@@ -160,43 +166,53 @@ export default function CategoryPage() {
             })
             
             // Aggregate for category totals
-            productWeeklyData.forEach((week: WeeklyData) => {
-              if (!allWeeklyData[week.week]) {
-                allWeeklyData[week.week] = {
-                  week: week.week,
-                  spend: 0,
-                  adsCount: 0,
-                  scaledAds: 0,
-                  workingAds: 0,
-                  videoAds: 0,
-                  imageAds: 0
+            if (Array.isArray(productWeeklyData)) {
+              productWeeklyData.forEach((week: WeeklyData) => {
+                if (!allWeeklyData[week.week]) {
+                  allWeeklyData[week.week] = {
+                    week: week.week,
+                    spend: 0,
+                    adsCount: 0,
+                    scaledAds: 0,
+                    workingAds: 0,
+                    videoAds: 0,
+                    imageAds: 0
+                  }
                 }
-              }
-              
-              allWeeklyData[week.week].spend += week.spend || 0
-              allWeeklyData[week.week].adsCount += week.adsCount || 0
-              allWeeklyData[week.week].scaledAds += week.scaledAds || 0
-              allWeeklyData[week.week].workingAds += week.workingAds || 0
-              allWeeklyData[week.week].videoAds += week.videoAds || 0
-              allWeeklyData[week.week].imageAds += week.imageAds || 0
-            })
+                
+                allWeeklyData[week.week].spend += week.spend || 0
+                allWeeklyData[week.week].adsCount += week.adsCount || 0
+                allWeeklyData[week.week].scaledAds += week.scaledAds || 0
+                allWeeklyData[week.week].workingAds += week.workingAds || 0
+                allWeeklyData[week.week].videoAds += week.videoAds || 0
+                allWeeklyData[week.week].imageAds += week.imageAds || 0
+              })
+            }
           }
           
           // Fetch designers for this product
           const designersResponse = await fetch(`/api/products/${product.name.toLowerCase()}/designers`)
           if (designersResponse.ok) {
-            const designers = await designersResponse.json()
+            const designersResponseData = await designersResponse.json()
+            // Handle both direct array and nested designers array
+            const designers = Array.isArray(designersResponseData) 
+              ? designersResponseData 
+              : (designersResponseData.designers || designersResponseData.data || [])
             
             for (const designer of designers) {
               try {
                 // Fetch designer performance
                 const perfResponse = await fetch(`/api/products/${product.name.toLowerCase()}/designer-performance/${designer.initials}`)
                 if (perfResponse.ok) {
-                  const performance = await perfResponse.json()
+                  const perfResponseData = await perfResponse.json()
+                  const performance = perfResponseData.performance || perfResponseData
                   
                   // Fetch top ads for this designer
                   const topAdsResponse = await fetch(`/api/products/${product.name.toLowerCase()}/top-ads?designer=${designer.initials}&limit=3`)
-                  const topAds = topAdsResponse.ok ? await topAdsResponse.json() : []
+                  const topAdsResponseData = topAdsResponse.ok ? await topAdsResponse.json() : []
+                  const topAds = Array.isArray(topAdsResponseData) 
+                    ? topAdsResponseData 
+                    : (topAdsResponseData.ads || topAdsResponseData.data || [])
                   
                   allDesigners.push({
                     name: `${designer.name} ${designer.surname}`,
@@ -486,26 +502,32 @@ function ProductComparisonChart({
 
   const getChartData = () => {
     const allWeeks = [...new Set(
-      productComparisons.flatMap(p => p.weeklyData.map(w => w.week))
+      productComparisons.flatMap(p => 
+        Array.isArray(p.weeklyData) ? p.weeklyData.map(w => w.week) : []
+      )
     )].sort()
 
     return allWeeks.map(week => {
       const dataPoint: any = { week }
       
       productComparisons.forEach(product => {
-        const weekData = product.weeklyData.find(w => w.week === week)
-        if (weekData) {
-          switch (chartView) {
-            case 'spend':
-              dataPoint[product.productName] = weekData.spend
-              break
-            case 'ads':
-              dataPoint[product.productName] = weekData.adsCount
-              break
-            case 'ratio':
-              const total = weekData.videoAds + weekData.imageAds
-              dataPoint[product.productName] = total > 0 ? (weekData.videoAds / total) * 100 : 0
-              break
+        if (Array.isArray(product.weeklyData)) {
+          const weekData = product.weeklyData.find(w => w.week === week)
+          if (weekData) {
+            switch (chartView) {
+              case 'spend':
+                dataPoint[product.productName] = weekData.spend
+                break
+              case 'ads':
+                dataPoint[product.productName] = weekData.adsCount
+                break
+              case 'ratio':
+                const total = weekData.videoAds + weekData.imageAds
+                dataPoint[product.productName] = total > 0 ? (weekData.videoAds / total) * 100 : 0
+                break
+            }
+          } else {
+            dataPoint[product.productName] = 0
           }
         } else {
           dataPoint[product.productName] = 0
