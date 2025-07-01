@@ -20,6 +20,7 @@ import {
 } from '@heroicons/react/24/outline'
 import WeeklyPerformanceChart from '@/components/WeeklyPerformanceChart'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface CategoryStats {
   totalSpend: number
@@ -508,7 +509,10 @@ function ProductComparisonChart({
     )].sort()
 
     return allWeeks.map(week => {
-      const dataPoint: any = { week }
+      const dataPoint: any = { 
+        week,
+        weekNumber: parseInt(week.replace('W', ''))
+      }
       
       productComparisons.forEach(product => {
         if (Array.isArray(product.weeklyData)) {
@@ -540,27 +544,139 @@ function ProductComparisonChart({
 
   const data = getChartData()
 
-  return (
-    <div className="w-full h-full">
-      {/* This would integrate with your existing chart library */}
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <div className="text-white text-lg mb-2">Product Comparison Chart</div>
-          <div className="text-gray-400 text-sm">
-            Showing {chartView} comparison across {productComparisons.length} products
-          </div>
-          <div className="mt-4 flex flex-wrap justify-center gap-4">
-            {productComparisons.map(product => (
-              <div key={product.productName} className="flex items-center space-x-2">
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-slate-800 border border-slate-600 rounded-lg p-3 shadow-lg">
+          <p className="text-white font-medium mb-2">{`Week ${label}`}</p>
+          <div className="space-y-1 text-sm">
+            {payload.map((entry: any, index: number) => (
+              <div key={index} className="flex items-center gap-2">
                 <div 
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: product.color }}
+                  className="w-3 h-3 rounded"
+                  style={{ backgroundColor: entry.color }}
                 />
-                <span className="text-gray-300 text-sm">{product.productName}</span>
+                <span className="text-gray-300">
+                  {entry.dataKey}: {
+                    chartView === 'spend' 
+                      ? `$${entry.value?.toLocaleString()}` 
+                      : chartView === 'ratio'
+                      ? `${entry.value?.toFixed(1)}%`
+                      : entry.value?.toLocaleString()
+                  }
+                </span>
               </div>
             ))}
           </div>
         </div>
+      )
+    }
+    return null
+  }
+
+  const formatYAxis = (value: number) => {
+    switch (chartView) {
+      case 'spend':
+        return value >= 1000 ? `$${(value / 1000).toFixed(0)}k` : `$${value}`
+      case 'ratio':
+        return `${value.toFixed(0)}%`
+      default:
+        return value.toString()
+    }
+  }
+
+  const getYAxisLabel = () => {
+    switch (chartView) {
+      case 'spend':
+        return 'Spend ($)'
+      case 'ads':
+        return 'Ad Count'
+      case 'ratio':
+        return 'Video Ratio (%)'
+      default:
+        return ''
+    }
+  }
+
+  return (
+    <div className="w-full h-full flex flex-col">
+      <div className="flex-1 min-h-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart
+            data={data}
+            margin={{
+              top: 20,
+              right: 30,
+              left: 60,
+              bottom: 20,
+            }}
+          >
+            <CartesianGrid 
+              strokeDasharray="3 3" 
+              stroke="#374151" 
+              opacity={0.3}
+            />
+            
+            <XAxis 
+              dataKey="weekNumber"
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: '#9CA3AF', fontSize: 12 }}
+              tickFormatter={(value) => value.toString()}
+            />
+            
+            <YAxis 
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: '#9CA3AF', fontSize: 11 }}
+              tickFormatter={formatYAxis}
+              label={{ 
+                value: getYAxisLabel(), 
+                angle: -90, 
+                position: 'insideLeft',
+                style: { textAnchor: 'middle', fill: '#9CA3AF' }
+              }}
+            />
+            
+            <Tooltip content={<CustomTooltip />} />
+            
+            {productComparisons.map((product, index) => (
+              <Line
+                key={product.productName}
+                type="monotone"
+                dataKey={product.productName}
+                stroke={product.color}
+                strokeWidth={3}
+                dot={{ 
+                  fill: product.color, 
+                  strokeWidth: 2, 
+                  stroke: '#1E293B',
+                  r: 4 
+                }}
+                activeDot={{ 
+                  r: 6, 
+                  fill: product.color,
+                  stroke: '#1E293B',
+                  strokeWidth: 2
+                }}
+                name={product.productName}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      
+      {/* Legend */}
+      <div className="flex items-center justify-center gap-4 mt-3 text-sm flex-shrink-0">
+        {productComparisons.map(product => (
+          <div key={product.productName} className="flex items-center gap-2">
+            <div 
+              className="w-3 h-3 rounded-full flex-shrink-0"
+              style={{ backgroundColor: product.color }}
+            />
+            <span className="text-gray-300">{product.productName}</span>
+          </div>
+        ))}
       </div>
     </div>
   )
