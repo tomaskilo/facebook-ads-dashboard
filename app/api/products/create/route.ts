@@ -19,58 +19,29 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServiceSupabaseClient();
 
-    // Check if table already exists
-    const { data: tableExists, error: tableCheckError } = await supabase.rpc(
-      'check_table_exists',
-      { table_name_param: tableName }
-    );
+    // Check if product already exists in metadata
+    const { data: existingProduct, error: checkError } = await supabase
+      .from('products')
+      .select('*')
+      .eq('initials', initials)
+      .single();
 
-    if (tableCheckError) {
-      console.error('Error checking table existence:', tableCheckError);
-      // Continue anyway - the CREATE TABLE IF NOT EXISTS will handle duplicates
+    if (checkError && checkError.code !== 'PGRST116') {
+      console.error('Error checking existing product:', checkError);
+      return NextResponse.json(
+        { error: 'Failed to check existing products' },
+        { status: 500 }
+      );
     }
 
-    if (tableExists) {
+    if (existingProduct) {
       return NextResponse.json(
         { error: `Product with initials "${initials}" already exists` },
         { status: 409 }
       );
     }
 
-    // Create the new table step by step to avoid syntax errors
-    const createTableSQL = `CREATE TABLE IF NOT EXISTS ${tableName} (
-        id BIGSERIAL PRIMARY KEY,
-        ad_name TEXT NOT NULL,
-        adset_name TEXT NOT NULL,
-        creative_type TEXT CHECK (creative_type IN ('IMAGE', 'VIDEO')) NOT NULL,
-        spend_usd DECIMAL(10,2) NOT NULL DEFAULT 0,
-        impressions INTEGER NOT NULL DEFAULT 0,
-        first_ad_spend_date TEXT,
-        last_ad_spend_date TEXT,
-        days_running INTEGER NOT NULL DEFAULT 0,
-        is_creative_hub INTEGER CHECK (is_creative_hub IN (0, 1)) NOT NULL DEFAULT 0,
-        year_created INTEGER,
-        month_created TEXT,
-        aspect_ratio TEXT,
-        week_number TEXT NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-      )`;
-
-    // Execute the table creation
-    const { error: createError } = await supabase.rpc('execute_sql', {
-      sql_query: createTableSQL
-    });
-
-    if (createError) {
-      console.error('Error creating table:', createError);
-      return NextResponse.json(
-        { error: 'Failed to create product table: ' + createError.message },
-        { status: 500 }
-      );
-    }
-
-    // Store the product metadata using direct Supabase insert
+    // Store the product metadata
     const { error: metadataError } = await supabase
       .from('products')
       .insert({
@@ -82,16 +53,66 @@ export async function POST(request: NextRequest) {
 
     if (metadataError) {
       console.error('Error storing product metadata:', metadataError);
-      // Don't fail the request since the table was created successfully
+      return NextResponse.json(
+        { error: 'Failed to store product metadata: ' + metadataError.message },
+        { status: 500 }
+      );
     }
 
-    console.log(`✅ Successfully created product table: ${tableName}`);
+    // Generate SQL for manual table creation
+    const createTableSQL = `
+-- Create table for ${name} (${initials})
+CREATE TABLE ${tableName} (
+  id BIGSERIAL PRIMARY KEY,
+  ad_name TEXT NOT NULL,
+  adset_name TEXT NOT NULL,
+  creative_type TEXT CHECK (creative_type IN ('IMAGE', 'VIDEO')) NOT NULL,
+  spend_usd DECIMAL(10,2) NOT NULL DEFAULT 0,
+  impressions INTEGER NOT NULL DEFAULT 0,
+  first_ad_spend_date TEXT,
+  last_ad_spend_date TEXT,
+  days_running INTEGER NOT NULL DEFAULT 0,
+  is_creative_hub INTEGER CHECK (is_creative_hub IN (0, 1)) NOT NULL DEFAULT 0,
+  year_created INTEGER,
+  month_created TEXT,
+  aspect_ratio TEXT,
+  week_number TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Create indexes for performance
+CREATE INDEX idx_${tablePrefix}_ads_data_week_number ON ${tableName}(week_number);
+CREATE INDEX idx_${tablePrefix}_ads_data_ad_name ON ${tableName}(ad_name);
+CREATE INDEX idx_${tablePrefix}_ads_data_creative_type ON ${tableName}(creative_type);
+CREATE INDEX idx_${tablePrefix}_ads_data_spend_usd ON ${tableName}(spend_usd);
+
+-- Enable RLS
+ALTER TABLE ${tableName} ENABLE ROW LEVEL SECURITY;
+
+-- Create RLS policies
+CREATE POLICY "Allow authenticated users to read ${tableName}" ON ${tableName}
+    FOR SELECT USING (auth.uid() IS NOT NULL);
+
+CREATE POLICY "Allow authenticated users to insert ${tableName}" ON ${tableName}
+    FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+
+CREATE POLICY "Allow authenticated users to update ${tableName}" ON ${tableName}
+    FOR UPDATE USING (auth.uid() IS NOT NULL);
+
+CREATE POLICY "Allow authenticated users to delete ${tableName}" ON ${tableName}
+    FOR DELETE USING (auth.uid() IS NOT NULL);
+`;
+
+    console.log(`✅ Successfully created product metadata for: ${tableName}`);
 
     return NextResponse.json({
       success: true,
-      message: `Product "${name}" created successfully`,
+      message: `Product "${name}" metadata created successfully`,
       tableName,
-      initials: initials.toUpperCase()
+      initials: initials.toUpperCase(),
+      sqlToRun: createTableSQL.trim(),
+      instructions: `Product metadata saved! Now run the provided SQL in your Supabase SQL Editor to create the table.`
     });
 
   } catch (error) {

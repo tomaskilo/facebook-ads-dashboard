@@ -25,6 +25,8 @@ export default function AddProductModal({ isOpen, onClose, onProductAdded }: Add
   })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [sqlInstructions, setSqlInstructions] = useState('')
+  const [showSqlModal, setShowSqlModal] = useState(false)
 
   if (!isOpen) return null
 
@@ -48,8 +50,15 @@ export default function AddProductModal({ isOpen, onClose, onProductAdded }: Add
       }
 
       const result = await response.json()
-      onProductAdded(formData)
-      onClose()
+      
+      // Show SQL instructions if provided
+      if (result.sqlToRun) {
+        setSqlInstructions(result.sqlToRun)
+        setShowSqlModal(true)
+      } else {
+        onProductAdded(formData)
+        onClose()
+      }
       
       // Reset form
       setFormData({
@@ -81,99 +90,165 @@ export default function AddProductModal({ isOpen, onClose, onProductAdded }: Add
     }))
   }
 
+  const handleSqlModalClose = () => {
+    setShowSqlModal(false)
+    setSqlInstructions('')
+    onProductAdded(formData)
+    onClose()
+  }
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(sqlInstructions)
+    alert('SQL copied to clipboard!')
+  }
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-900">Add New Product</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <X size={24} />
-          </button>
+    <>
+      {/* Main Add Product Modal */}
+      {!showSqlModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-gray-900">Add New Product</h2>
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                  Product Name
+                </label>
+                <input
+                  type="text"
+                  id="name"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white"
+                  placeholder="e.g., Bioma"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="initials" className="block text-sm font-medium text-gray-700 mb-1">
+                  Product Initials
+                </label>
+                <input
+                  type="text"
+                  id="initials"
+                  name="initials"
+                  value={formData.initials}
+                  onChange={handleInitialsChange}
+                  required
+                  maxLength={5}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white"
+                  placeholder="e.g., BI"
+                  style={{ textTransform: 'uppercase' }}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
+                  Category
+                </label>
+                <select
+                  id="category"
+                  name="category"
+                  value={formData.category}
+                  onChange={handleInputChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white"
+                >
+                  <option value="" disabled>Select a category</option>
+                  {CATEGORIES.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isLoading || !formData.name || !formData.initials || !formData.category}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-md transition-colors"
+                >
+                  {isLoading ? 'Creating...' : 'Create Product'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
+      )}
 
-        {error && (
-          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-            {error}
-          </div>
-        )}
+      {/* SQL Instructions Modal */}
+      {showSqlModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-gray-900">Complete Product Setup</h2>
+              <button
+                onClick={handleSqlModalClose}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-              Product Name
-            </label>
-            <input
-              type="text"
-              id="name"
-              name="name"
-              value={formData.name}
-              onChange={handleInputChange}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white"
-              placeholder="e.g., Bioma"
-            />
-          </div>
+            <div className="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded">
+              ✅ Product metadata created successfully! 
+              <br />
+              📋 Now copy and run the SQL below in your Supabase SQL Editor to complete the setup.
+            </div>
 
-          <div>
-            <label htmlFor="initials" className="block text-sm font-medium text-gray-700 mb-1">
-              Product Initials
-            </label>
-            <input
-              type="text"
-              id="initials"
-              name="initials"
-              value={formData.initials}
-              onChange={handleInitialsChange}
-              required
-              maxLength={5}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white"
-              placeholder="e.g., BI"
-              style={{ textTransform: 'uppercase' }}
-            />
-          </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                SQL to run in Supabase:
+              </label>
+              <textarea
+                value={sqlInstructions}
+                readOnly
+                className="w-full h-64 px-3 py-2 border border-gray-300 rounded-md text-gray-900 bg-gray-50 font-mono text-sm"
+              />
+            </div>
 
-          <div>
-            <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
-              Category
-            </label>
-            <select
-              id="category"
-              name="category"
-              value={formData.category}
-              onChange={handleInputChange}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white"
-            >
-              <option value="" disabled>Select a category</option>
-              {CATEGORIES.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={copyToClipboard}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+              >
+                📋 Copy SQL
+              </button>
+              <button
+                onClick={handleSqlModalClose}
+                className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors"
+              >
+                Done
+              </button>
+            </div>
           </div>
-
-          <div className="flex justify-end space-x-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isLoading || !formData.name || !formData.initials || !formData.category}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-md transition-colors"
-            >
-              {isLoading ? 'Creating...' : 'Create Product'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        </div>
+      )}
+    </>
   )
 } 
