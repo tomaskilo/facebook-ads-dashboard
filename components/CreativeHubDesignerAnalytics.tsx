@@ -20,6 +20,7 @@ interface CreativeHubDesigner {
   imageAds: number
   scaledAds: number
   isPrePopulated: boolean
+  note?: string
 }
 
 export default function CreativeHubDesignerAnalytics() {
@@ -60,6 +61,10 @@ export default function CreativeHubDesignerAnalytics() {
     )
   }
 
+  // Check if we have attribution issues
+  const hasAttributionIssue = designers.length > 0 && designers.every(d => d.totalAds === 0)
+  const attributionNote = designers[0]?.note
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -75,6 +80,22 @@ export default function CreativeHubDesignerAnalytics() {
           Refresh
         </button>
       </div>
+
+      {/* Attribution Warning */}
+      {hasAttributionIssue && attributionNote && (
+        <div className="bg-yellow-600/10 border border-yellow-600/20 rounded-lg p-4">
+          <div className="flex items-start">
+            <div className="text-yellow-400 mr-3 mt-0.5">⚠️</div>
+            <div>
+              <h6 className="text-sm font-medium text-yellow-400 mb-1">Attribution Unavailable</h6>
+              <p className="text-xs text-gray-300">{attributionNote}</p>
+              <p className="text-xs text-gray-400 mt-1">
+                Creative Hub ads found but individual designer tracking requires ad names to contain designer initials (_AS_, _KZ_, _AA_).
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Designers Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
