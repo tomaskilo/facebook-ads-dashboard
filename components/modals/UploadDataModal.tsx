@@ -52,10 +52,19 @@ export default function UploadDataModal({ onClose, products }: UploadDataModalPr
   const [error, setError] = useState('')
   const [dragActive, setDragActive] = useState(false)
   const [overallProgress, setOverallProgress] = useState(0)
+  const [createdProducts, setCreatedProducts] = useState<Product[]>([]) // Track auto-created products
+  const [showSqlModal, setShowSqlModal] = useState(false)
+  const [sqlInstructions, setSqlInstructions] = useState('')
+  const [missingTableProduct, setMissingTableProduct] = useState('')
+
+  // Get combined products list (existing + auto-created)
+  const getAllProducts = (): Product[] => {
+    return [...products, ...createdProducts]
+  }
 
   // Extract week number and product initials from filename (e.g., "BI W04.csv" -> "W04", "BI")
   const extractFileInfo = (filename: string): { weekNumber: string, productInitials: string } => {
-    // Match pattern: {INITIALS} W{NUMBER}.csv (e.g., "BI W04.csv", "CB W01.csv")
+    // Match pattern: {INITIALS} W{NUMBER}.csv (e.g., "BI W04.csv", "CB W01.csv", "RH W01.csv")
     const match = filename.match(/^([A-Z]{2,5})\s+W(\d+)\.csv$/i)
     if (match) {
       return {
@@ -66,9 +75,81 @@ export default function UploadDataModal({ onClose, products }: UploadDataModalPr
     return { weekNumber: '', productInitials: '' }
   }
 
-  // Find product by initials
+  // Find product by initials (from existing + auto-created)
   const findProductByInitials = (initials: string): Product | undefined => {
-    return products.find(p => p.initials.toUpperCase() === initials.toUpperCase())
+    return getAllProducts().find(p => p.initials.toUpperCase() === initials.toUpperCase())
+  }
+
+  // Auto-create a new product with smart defaults
+  const autoCreateProduct = async (initials: string): Promise<Product | null> => {
+    try {
+      console.log(`🚀 Auto-creating product with initials: ${initials}`)
+      
+      // Generate a smart product name from initials
+      const productName = generateProductName(initials)
+      const category = 'Ecommerce' // Default category, user can change later
+      
+      const response = await fetch('/api/products/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: productName,
+          initials: initials.toUpperCase(),
+          category: category
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to create product')
+      }
+
+      const result = await response.json()
+      
+      // Create product object to add to our local list
+      const newProduct: Product = {
+        id: Date.now(), // Temporary ID
+        name: productName,
+        initials: initials.toUpperCase(),
+        category: category,
+        table_name: `${initials.toLowerCase()}_ads_data`,
+        created_at: new Date().toISOString()
+      }
+      
+      // Add to our local created products list
+      setCreatedProducts(prev => [...prev, newProduct])
+      
+      console.log(`✅ Auto-created product: ${productName} (${initials})`)
+      
+      // Note: The user will still need to run the SQL to create the table
+      // but we'll handle that in the upload process
+      
+      return newProduct
+      
+    } catch (error) {
+      console.error('❌ Failed to auto-create product:', error)
+      return null
+    }
+  }
+
+  // Generate a smart product name from initials
+  const generateProductName = (initials: string): string => {
+    const commonMappings: { [key: string]: string } = {
+      'BI': 'Bioma',
+      'CB': 'Colonbroom', 
+      'RH': 'Rhea',
+      'BW': 'Beyond Wellness',
+      'WMA': 'Weight Management Assistant',
+      'GH': 'Go Health',
+      'EA': 'Ecom Accelerator'
+    }
+    
+    // Return mapped name if available, otherwise generate from initials
+    return commonMappings[initials.toUpperCase()] || 
+           initials.toUpperCase().split('').map(char => `${char}${char.toLowerCase()}`).join('') ||
+           `Product ${initials.toUpperCase()}`
   }
 
   // Parse creative type based on ad name conventions
@@ -185,7 +266,12 @@ export default function UploadDataModal({ onClose, products }: UploadDataModalPr
     const result = await response.json()
 
     if (!response.ok) {
-      throw new Error(result.error || 'Upload failed')
+      // Create enhanced error object for missing table case
+      const error = new Error(result.error || 'Upload failed') as any
+      if (result.tableNotFound) {
+        error.response = result
+      }
+      throw error
     }
 
     return result
@@ -218,10 +304,26 @@ export default function UploadDataModal({ onClose, products }: UploadDataModalPr
             })
             resolve()
           } catch (err: any) {
-            updateFileStatus(index, { 
-              status: 'error', 
-              message: err.message 
-            })
+            console.error('Upload error:', err)
+            
+            // Check if this is a missing table error
+            if (err.response && err.response.tableNotFound) {
+              updateFileStatus(index, { 
+                status: 'error', 
+                message: `Table missing for ${err.response.productInitials}. SQL provided - run it and retry.`
+              })
+              
+              // Show SQL modal
+              setSqlInstructions(err.response.sqlToCreate)
+              setMissingTableProduct(err.response.productInitials)
+              setShowSqlModal(true)
+            } else {
+              updateFileStatus(index, { 
+                status: 'error', 
+                message: err.message 
+              })
+            }
+            
             reject(err)
           }
         },
@@ -271,62 +373,111 @@ export default function UploadDataModal({ onClose, products }: UploadDataModalPr
     }
   }
 
-  const onDrop = (acceptedFiles: File[]) => {
+  const onDrop = async (acceptedFiles: File[]) => {
     setError('')
     
-    const newFiles: FileUploadStatus[] = acceptedFiles.map(file => {
+    const newFiles: FileUploadStatus[] = []
+    
+    for (const file of acceptedFiles) {
       // Validate file type
       if (!file.name.toLowerCase().endsWith('.csv')) {
-        return {
+        newFiles.push({
           file,
           status: 'error' as const,
           weekNumber: '',
           productInitials: '',
           tableName: '',
           message: 'File must be a CSV file'
-        }
+        })
+        continue
       }
 
       // Extract file info
       const { weekNumber, productInitials } = extractFileInfo(file.name)
       
       if (!weekNumber || !productInitials) {
-        return {
+        newFiles.push({
           file,
           status: 'error' as const,
           weekNumber: '',
           productInitials: '',
           tableName: '',
-          message: 'Invalid filename format. Use: {INITIALS} W{NUMBER}.csv (e.g., BI W04.csv)'
-        }
+          message: 'Invalid filename format. Use: {INITIALS} W{NUMBER}.csv (e.g., BI W04.csv, RH W01.csv)'
+        })
+        continue
       }
 
-      // Find matching product
-      const product = findProductByInitials(productInitials)
+      // Find matching product or auto-create
+      let product = findProductByInitials(productInitials)
+      
       if (!product) {
-        return {
+        // Attempt to auto-create the product
+        console.log(`🔄 Product with initials "${productInitials}" not found, attempting auto-creation...`)
+        
+        newFiles.push({
           file,
-          status: 'error' as const,
+          status: 'processing' as const,
           weekNumber,
           productInitials,
           tableName: '',
-          message: `Product with initials "${productInitials}" not found. Create the product first.`
+          message: `Auto-creating product with initials "${productInitials}"...`
+        })
+        
+        // Set files immediately to show progress
+        setFiles(prev => [...prev, ...newFiles])
+        
+        // Attempt auto-creation
+        const createdProduct = await autoCreateProduct(productInitials)
+        
+        if (createdProduct) {
+          product = createdProduct
+          // Update the file status to success
+          setFiles(prev => prev.map(f => 
+            f.file === file && f.status === 'processing' 
+              ? {
+                  ...f,
+                  status: 'pending' as const,
+                  tableName: createdProduct.table_name,
+                  message: `✅ Auto-created ${createdProduct.name} (${productInitials}) • Ready to upload ${weekNumber}`
+                }
+              : f
+          ))
+        } else {
+          // Auto-creation failed
+          setFiles(prev => prev.map(f => 
+            f.file === file && f.status === 'processing'
+              ? {
+                  ...f,
+                  status: 'error' as const,
+                  message: `Failed to auto-create product with initials "${productInitials}". Please create manually first.`
+                }
+              : f
+          ))
         }
+        continue
       }
 
-      return {
+      // Product found, add as pending
+      newFiles.push({
         file,
         status: 'pending' as const,
         weekNumber,
         productInitials,
         tableName: product.table_name,
         message: `Ready to upload ${weekNumber} for ${product.name}`
-      }
-    })
+      })
+    }
 
-    // Check for duplicate week numbers within the same product
+    // Add remaining files that didn't require auto-creation
+    if (newFiles.length > 0) {
+      setFiles(prev => [...prev, ...newFiles])
+    }
+
+    // Check for duplicate week numbers within the same product (existing logic)
+    const allFiles = [...files, ...newFiles]
     const productWeeks = new Map<string, string[]>()
-    newFiles.forEach(f => {
+    
+    allFiles.forEach(f => {
       if (f.status === 'pending') {
         const key = f.productInitials
         if (!productWeeks.has(key)) {
@@ -363,8 +514,6 @@ export default function UploadDataModal({ onClose, products }: UploadDataModalPr
         return
       }
     }
-
-    setFiles(prev => [...prev, ...newFiles])
   }
 
   const removeFile = (index: number) => {
@@ -405,7 +554,20 @@ export default function UploadDataModal({ onClose, products }: UploadDataModalPr
   const canStartUpload = validFiles.length > 0 && !uploading
 
   // Get available products for display
-  const availableProducts = products.map(p => `${p.initials} (${p.name})`).join(', ') || 'No products available'
+  const availableProducts = getAllProducts().map(p => `${p.initials} (${p.name})`).join(', ') || 'No products available'
+
+  // Handle SQL modal close
+  const handleSqlModalClose = () => {
+    setShowSqlModal(false)
+    setSqlInstructions('')
+    setMissingTableProduct('')
+  }
+
+  // Copy SQL to clipboard
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(sqlInstructions)
+    alert('SQL copied to clipboard!')
+  }
 
   return (
     <Dialog open={true} onClose={onClose} className="relative z-50">
@@ -543,21 +705,100 @@ export default function UploadDataModal({ onClose, products }: UploadDataModalPr
 
             {/* Instructions */}
             <div className="mt-6 text-xs text-gray-600">
-              <h4 className="font-semibold mb-2">Bulk Upload Instructions:</h4>
+              <h4 className="font-semibold mb-2">Enhanced Bulk Upload Instructions:</h4>
               <ul className="space-y-1">
-                <li>• Select multiple CSV files at once (Ctrl/Cmd + click)</li>
-                <li>• Filename format: {`{INITIALS} W{NUMBER}.csv`}</li>
-                <li>• Available products: {availableProducts}</li>
-                <li>• Example: BI W04.csv (Bioma Week 4), CB W01.csv (Colonbroom Week 1)</li>
-                <li>• Files will be processed sequentially</li>
-                <li>• Duplicate week numbers for same product will be rejected</li>
-                <li>• Standard CSV format with 9 columns required</li>
-                <li>• Create new products first using "Add Product" if needed</li>
+                <li>• <strong>Smart Product Detection:</strong> New products are automatically created from filename initials</li>
+                <li>• <strong>Filename format:</strong> {`{INITIALS} W{NUMBER}.csv`} (e.g., BI W04.csv, RH W01.csv, CB W01.csv)</li>
+                <li>• <strong>Auto-Creation:</strong> If product doesn't exist, it will be created automatically in Ecommerce category</li>
+                <li>• <strong>Examples:</strong> RH W01.csv → Creates "Rhea" product, WMA W05.csv → Creates "Weight Management Assistant"</li>
+                <li>• <strong>Multiple files:</strong> Select multiple CSV files at once (Ctrl/Cmd + click)</li>
+                <li>• <strong>Processing:</strong> Files are processed sequentially with real-time status updates</li>
+                <li>• <strong>Validation:</strong> Duplicate week numbers for same product are automatically detected</li>
+                <li>• <strong>CSV format:</strong> Standard 9-column format with ad data required</li>
+                <li>• <strong>Available products:</strong> {availableProducts}</li>
+                {createdProducts.length > 0 && (
+                  <li className="text-green-600 font-medium">
+                    • <strong>✅ Auto-created this session:</strong> {createdProducts.map(p => `${p.initials} (${p.name})`).join(', ')}
+                  </li>
+                )}
               </ul>
+              {createdProducts.length > 0 && (
+                <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded text-blue-700">
+                  <strong>📝 Note:</strong> Auto-created products need their database tables created. 
+                  The SQL will be provided after upload completion.
+                </div>
+              )}
             </div>
           </div>
         </Dialog.Panel>
       </div>
+
+      {/* SQL Modal */}
+      {showSqlModal && (
+        <div className="fixed inset-0 bg-black/30" aria-hidden="true">
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Panel className="mx-auto max-w-2xl bg-white rounded-lg shadow-lg max-h-[90vh] overflow-hidden">
+              <div className="flex items-center justify-between p-6 border-b">
+                <Dialog.Title className="text-lg font-semibold text-gray-900">
+                  SQL Instructions for {missingTableProduct}
+                </Dialog.Title>
+                <button
+                  onClick={handleSqlModalClose}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+
+              <div className="p-6 max-h-[70vh] overflow-y-auto">
+                <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+                  ⚠️ Table missing for product "{missingTableProduct}". 
+                  <br />
+                  📋 Run the SQL below in your Supabase SQL Editor to create the table, then retry the upload.
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    SQL to run in Supabase:
+                  </label>
+                  <textarea
+                    value={sqlInstructions}
+                    readOnly
+                    className="w-full h-64 px-3 py-2 border border-gray-300 rounded-md text-gray-900 bg-gray-50 font-mono text-sm"
+                  />
+                </div>
+
+                <div className="text-xs text-gray-600">
+                  <h4 className="font-semibold mb-2">Instructions:</h4>
+                  <ol className="space-y-1 list-decimal list-inside">
+                    <li>Copy the SQL above using the button below</li>
+                    <li>Open your Supabase dashboard and go to SQL Editor</li>
+                    <li>Paste and run the SQL to create the table</li>
+                    <li>Return here and retry the upload</li>
+                  </ol>
+                </div>
+              </div>
+
+              <div className="p-6 border-t">
+                <div className="flex gap-3">
+                  <button
+                    onClick={copyToClipboard}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                  >
+                    📋 Copy SQL
+                  </button>
+                  <button
+                    onClick={handleSqlModalClose}
+                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </Dialog.Panel>
+          </div>
+        </div>
+      )}
     </Dialog>
   )
 } 

@@ -97,11 +97,10 @@ export default function Sidebar() {
   }
 
   const handleProductAdded = (product: { name: string; initials: string; category: string }) => {
-    // Refresh the products list from database
+    console.log('Product added:', product)
+    setShowAddProductModal(false)
+    // Refresh the products list to include the new product
     fetchProducts()
-    
-    // Show success message
-    console.log(`✅ Product "${product.name}" added successfully!`)
   }
 
   // Get category icon
