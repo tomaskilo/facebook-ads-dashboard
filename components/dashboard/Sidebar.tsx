@@ -12,7 +12,8 @@ import {
   PlusIcon,
   ArrowUpTrayIcon,
   ChevronRightIcon,
-  ChevronDownIcon
+  ChevronDownIcon,
+  ArrowPathIcon
 } from '@heroicons/react/24/outline'
 import AddProductModal from '@/components/modals/AddProductModal'
 import UploadDataModal from '@/components/modals/UploadDataModal'
@@ -260,6 +261,18 @@ export default function Sidebar() {
                     >
                       <ArrowUpTrayIcon className="h-6 w-6 shrink-0" aria-hidden="true" />
                       Upload CSV Data
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      onClick={fetchProducts}
+                      disabled={loadingProducts}
+                      className="text-slate-400 hover:text-white hover:bg-slate-800 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold w-full text-left disabled:opacity-50"
+                    >
+                      <svg className="h-6 w-6 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                      </svg>
+                      {loadingProducts ? 'Refreshing...' : 'Refresh Products'}
                     </button>
                   </li>
                   <li>
