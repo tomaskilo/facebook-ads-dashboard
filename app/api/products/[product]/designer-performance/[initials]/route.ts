@@ -114,8 +114,8 @@ export async function GET(
     })
 
     // Calculate totals
-    const totalAds = new Set(designerAds.map(ad => ad.ad_name)).size
-    const totalSpend = designerAds.reduce((sum, ad) => sum + (ad.spend_usd || 0), 0)
+    const totalAds = new Set(designerAds.map((ad: any) => ad.ad_name)).size
+    const totalSpend = designerAds.reduce((sum: any, ad: any) => sum + (ad.spend_usd || 0), 0)
 
     console.log(`✅ Designer ${initials} performance in ${product}:`, {
       totalWeeks: designerPerformance.length,

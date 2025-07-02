@@ -61,23 +61,23 @@ export async function GET() {
         ad.ad_name && ad.ad_name.includes(`_${initials}_`)
       )
 
-      const totalAds = new Set(designerAds.map(ad => ad.ad_name)).size
-      const totalSpend = designerAds.reduce((sum, ad) => sum + (ad.spend_usd || 0), 0)
+      const totalAds = new Set(designerAds.map((ad: any) => ad.ad_name)).size
+      const totalSpend = designerAds.reduce((sum: any, ad: any) => sum + (ad.spend_usd || 0), 0)
 
       // Count weeks this designer has been active
-      const activeWeeks = new Set(designerAds.map(ad => ad.week_number)).size
+      const activeWeeks = new Set(designerAds.map((ad: any) => ad.week_number)).size
 
       // Count video vs image ads
       const videoAds = new Set(
         designerAds
-          .filter(ad => ad.creative_type === 'VIDEO')
-          .map(ad => ad.ad_name)
+          .filter((ad: any) => ad.creative_type === 'VIDEO')
+          .map((ad: any) => ad.ad_name)
       ).size
 
       const imageAds = new Set(
         designerAds
-          .filter(ad => ad.creative_type === 'IMAGE')
-          .map(ad => ad.ad_name)
+          .filter((ad: any) => ad.creative_type === 'IMAGE')
+          .map((ad: any) => ad.ad_name)
       ).size
 
       // Calculate scaled ads for this designer (only 2025 ads)

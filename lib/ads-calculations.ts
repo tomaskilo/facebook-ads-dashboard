@@ -317,9 +317,9 @@ export class AdsCalculator {
 
     const activeAds = Array.from(activeAdsMap.values())
     const count = activeAds.length
-    const totalSpend = activeAds.reduce((sum, ad) => sum + (ad.spend_usd || 0), 0)
-    const videoCount = activeAds.filter(ad => ad.creative_type === 'VIDEO').length
-    const imageCount = activeAds.filter(ad => ad.creative_type === 'IMAGE').length
+    const totalSpend = activeAds.reduce((sum: any, ad: any) => sum + (ad.spend_usd || 0), 0)
+    const videoCount = activeAds.filter((ad: any) => ad.creative_type === 'VIDEO').length
+    const imageCount = activeAds.filter((ad: any) => ad.creative_type === 'IMAGE').length
 
     console.log(`✅ ${productName}: ${count} active ads (${videoCount} video, ${imageCount} image), $${totalSpend.toLocaleString()} spend`)
 
@@ -522,13 +522,13 @@ export class AdsCalculator {
 
       return designers.map((designer: any) => {
         // Find ads for this designer
-        const designerAds = allAds.filter(ad => 
+        const designerAds = allAds.filter((ad: any) => 
           ad.ad_name && ad.ad_name.includes(`_${designer.initials}_`)
         )
 
-        const totalAds = new Set(designerAds.map(ad => ad.ad_name)).size
-        const totalSpend = designerAds.reduce((sum, ad) => sum + (ad.spend_usd || 0), 0)
-        const activeWeeks = new Set(designerAds.map(ad => ad.week_number)).size
+        const totalAds = new Set(designerAds.map((ad: any) => ad.ad_name)).size
+        const totalSpend = designerAds.reduce((sum: any, ad: any) => sum + (ad.spend_usd || 0), 0)
+        const activeWeeks = new Set(designerAds.map((ad: any) => ad.week_number)).size
 
         const { scaledAds } = this.calculateScaledAndWorkingAds(designerAds)
 
@@ -539,8 +539,8 @@ export class AdsCalculator {
           totalSpend: Math.round(totalSpend),
           activeWeeks,
           scaledAds,
-          videoAds: new Set(designerAds.filter(ad => ad.creative_type === 'VIDEO').map(ad => ad.ad_name)).size,
-          imageAds: new Set(designerAds.filter(ad => ad.creative_type === 'IMAGE').map(ad => ad.ad_name)).size
+          videoAds: new Set(designerAds.filter((ad: any) => ad.creative_type === 'VIDEO').map((ad: any) => ad.ad_name)).size,
+          imageAds: new Set(designerAds.filter((ad: any) => ad.creative_type === 'IMAGE').map((ad: any) => ad.ad_name)).size
         }
       })
     } catch (error: any) {
@@ -617,7 +617,7 @@ export class AdsCalculator {
       productInitials ? this.calculateDesignerPerformance(tableName, productName, productInitials) : Promise.resolve([])
     ])
 
-    const totalSpend = allAds.reduce((sum, ad) => sum + (ad.spend_usd || 0), 0)
+    const totalSpend = allAds.reduce((sum: any, ad: any) => sum + (ad.spend_usd || 0), 0)
     const totalAds = allAds.length
     const processingTime = Date.now() - startTime
 
@@ -642,7 +642,7 @@ export class AdsCalculator {
         totalRecords: totalAds,
         processingTime,
         performance: { ...this.performance },
-        uniqueWeeks: [...new Set(allAds.map(ad => ad.week_number))].sort(),
+        uniqueWeeks: [...new Set(allAds.map((ad: any) => ad.week_number))].sort(),
         calculatedAt: new Date().toISOString()
       }
     }

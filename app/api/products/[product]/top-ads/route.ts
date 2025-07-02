@@ -15,7 +15,7 @@ export async function GET(
     const productInfo = await adsCalculator.getProductInfo(product);
     const topAds = await adsCalculator.getProductTopAds(productInfo.table_name, productInfo.name);
 
-    console.log(`✅ ${product} top ads processed: ${topAds.slice(0, 3).map(ad => ({ name: ad.name.substring(0, 50), spend: ad.spend }))}`);
+    console.log(`✅ ${product} top ads processed: ${topAds.slice(0, 3).map((ad: any) => ({ name: ad.name.substring(0, 50), spend: ad.spend }))}`);
 
     return NextResponse.json({ topAds });
 

@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('Raw ads data count:', allAdsData?.length)
-    console.log('Unique weeks in data:', Array.from(new Set(allAdsData?.map(ad => ad.week_number))).sort())
+    console.log('Unique weeks in data:', Array.from(new Set(allAdsData?.map((ad: any) => ad.week_number))).sort())
 
     // Group data by week and calculate metrics
     const weeklyData = allAdsData?.reduce((acc, ad) => {
