@@ -18,6 +18,7 @@
     "cheerio": "^1.1.0",
     "clsx": "^2.0.0",
     "crawl4ai": "^1.0.1",
+    "critters": "^0.0.23",
     "date-fns": "^2.30.0",
     "lucide-react": "^0.294.0",
     "next": "14.0.0",
