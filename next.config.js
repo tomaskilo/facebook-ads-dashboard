@@ -65,12 +65,32 @@ const nextConfig = {
 
   // Experimental features for better performance
   experimental: {
-    optimizePackageImports: ['@heroicons/react'],
+    optimizeCss: true,
+    // Enable aggressive server-side caching
+    serverComponentsExternalPackages: ['@supabase/supabase-js'],
   },
 
   // Performance optimizations
   swcMinify: true,
   poweredByHeader: false,
+
+  // Optimize chunks
+  webpack: (config, { dev, isServer }) => {
+    if (!dev && !isServer) {
+      // Production client-side optimizations
+      config.optimization.splitChunks = {
+        chunks: 'all',
+        cacheGroups: {
+          vendor: {
+            test: /[\\/]node_modules[\\/]/,
+            name: 'vendors',
+            chunks: 'all',
+          },
+        },
+      }
+    }
+    return config
+  },
 }
 
 module.exports = nextConfig 

@@ -1,53 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { adsCalculator } from '@/lib/ads-calculations'
+import { createServiceSupabaseClient } from '@/lib/supabase-client'
 
 export const dynamic = 'force-dynamic'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { product: string } }
 ) {
   try {
-    const { product } = params;
-    
-    // First, get the product info from products table (case-insensitive)
-    const { data: productInfo, error: productError } = await supabase
-      .from('products')
-      .select('initials, name')
-      .ilike('name', `%${product}%`)
-      .single();
+    const { product } = params
+    console.log(`📊 Fetching designers for ${product} using centralized calculator`)
 
-    if (productError || !productInfo) {
-      return NextResponse.json(
-        { error: `Product "${product}" not found` },
-        { status: 404 }
-      );
-    }
+    // Get product info and calculate designers using centralized utility
+    const productInfo = await adsCalculator.getProductInfo(product)
+    const designers = await adsCalculator.getProductDesigners(
+      productInfo.table_name, 
+      productInfo.name, 
+      productInfo.initials
+    )
 
-    const productInitials = productInfo.initials;
-    console.log(`📊 Fetching designers for ${product} (${productInitials})`);
+    console.log(`✅ Found ${designers.length} designers for ${product}`)
 
-    const { data: designers, error } = await supabase
-      .from('designers')
-      .select('*')
-      .eq('product', productInitials)
-      .order('name', { ascending: true })
+    return NextResponse.json({ designers })
 
-    if (error) {
-      console.error('Error fetching designers:', error)
-      return NextResponse.json({ error: 'Failed to fetch designers' }, { status: 500 })
-    }
-
-    console.log(`✅ Found ${designers?.length || 0} designers for ${product}`);
-    return NextResponse.json({ designers: designers || [] })
   } catch (error) {
-    console.error('Error in designers GET:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    console.error(`Error in ${params.product} designers API:`, error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Internal server error' },
+      { status: 500 }
+    )
   }
 }
 
@@ -58,6 +40,7 @@ export async function POST(
   try {
     const { product } = params;
     const { name, surname, initials } = await request.json()
+    const supabase = createServiceSupabaseClient()
 
     // Validate input
     if (!name || !surname || !initials) {

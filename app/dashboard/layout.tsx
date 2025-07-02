@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react'
 import Sidebar from '@/components/dashboard/Sidebar'
+import PerformanceMonitor from '@/components/performance/PerformanceMonitor'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 
@@ -39,6 +40,7 @@ export default function DashboardLayout({
           {children}
         </div>
       </main>
+      <PerformanceMonitor />
     </div>
   )
 } 

@@ -87,7 +87,7 @@ export default function ColonbroomPage() {
 
       // Fetch all data in parallel
       const [statsResponse, weeklyResponse, topAdsResponse] = await Promise.all([
-        fetch('/api/colonbroom/stats'),
+        fetch('/api/products/colonbroom/stats'),  // Use centralized calculator
         fetch('/api/colonbroom/weekly-data'),
         fetch('/api/colonbroom/top-ads')
       ])
