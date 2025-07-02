@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="192" height="192" viewBox="0 0 192 192" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="192" height="192" rx="24" fill="#2563eb"/>
+  <circle cx="96" cy="96" r="48" fill="white" opacity="0.9"/>
+  <text x="96" y="110" text-anchor="middle" fill="#2563eb" font-family="Arial, sans-serif" font-size="48" font-weight="bold">AD</text>
+</svg> 

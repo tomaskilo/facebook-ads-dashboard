@@ -116,29 +116,35 @@ export default function CategoryPage() {
       
       console.log(`📊 Found ${categoryProducts.length} products in ${category}`)
       
+      // Set products for the badge
+      setProducts(categoryProducts)
+      
       // Optimize: Fetch data in parallel with limits
       const productPromises = categoryProducts.map(async (product: any) => {
         try {
           // Limit data fetching to improve performance
-          const [statsRes, weeklyRes, designersRes] = await Promise.all([
+          const [statsRes, weeklyRes, designersRes, activeAdsRes] = await Promise.all([
             fetch(`/api/products/${product.name.toLowerCase()}/stats`),
             fetch(`/api/products/${product.name.toLowerCase()}/weekly-data?limit=12`), // Only last 12 weeks
-            fetch(`/api/products/${product.name.toLowerCase()}/designers`)
+            fetch(`/api/products/${product.name.toLowerCase()}/designers`),
+            fetch(`/api/products/${product.name.toLowerCase()}/active-ads`)
           ])
           
           const statsData = statsRes.ok ? await statsRes.json() : null
           const weeklyData = weeklyRes.ok ? await weeklyRes.json() : null
           const designersData = designersRes.ok ? await designersRes.json() : null
+          const activeAdsData = activeAdsRes.ok ? await activeAdsRes.json() : null
           
           return {
             product,
             stats: statsData?.stats || statsData,
             weekly: Array.isArray(weeklyData) ? weeklyData : (weeklyData?.weeklyData || weeklyData?.data || []),
-            designers: Array.isArray(designersData) ? designersData : (designersData?.designers || designersData?.data || [])
+            designers: Array.isArray(designersData) ? designersData : (designersData?.designers || designersData?.data || []),
+            activeAds: activeAdsData
           }
         } catch (err) {
           console.warn(`⚠️ Error fetching data for ${product.name}:`, err)
-          return { product, stats: null, weekly: [], designers: [] }
+          return { product, stats: null, weekly: [], designers: [], activeAds: null }
         }
       })
       
@@ -159,18 +165,29 @@ export default function CategoryPage() {
       const validWeeklyData: ProductWeeklyData[] = []
       const allDesigners: DesignerPerformance[] = []
       
-      productResults.forEach(({ product, stats, weekly, designers }) => {
+      productResults.forEach(({ product, stats, weekly, designers, activeAds }) => {
         // Aggregate stats
         if (stats) {
           totalStats.totalSpend += stats.totalSpend || 0
-          totalStats.activeAds += stats.activeAds || 0
           totalStats.scaledAds += stats.scaledAds || 0
           totalStats.workingAds += stats.workingAds || 0
           totalStats.newAds += stats.newAds || 0
         }
         
-        // Store weekly data for charts
+        // Use truly active ads count from new endpoint
+        if (activeAds) {
+          totalStats.activeAds += activeAds.activeAdsCount || 0
+        }
+        
+        // Calculate total creatives from weekly data
         if (Array.isArray(weekly) && weekly.length > 0) {
+          // Sum up video and image ads from all weeks
+          weekly.forEach(weekData => {
+            totalStats.totalVideoAds += weekData.videoAds || 0
+            totalStats.totalImageAds += weekData.imageAds || 0
+          })
+          
+          // Store weekly data for charts
           validWeeklyData.push({
             productName: product.name,
             weeklyData: weekly.slice(-12), // Only last 12 weeks for performance

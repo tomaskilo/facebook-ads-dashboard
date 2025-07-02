@@ -16,9 +16,16 @@ export default function Home() {
 
   const handleSignIn = async () => {
     try {
-      await signIn('google', { callbackUrl: '/dashboard/products/colonbroom' })
+      console.log('🔄 Starting Google sign-in...')
+      console.log('NextAuth URL:', process.env.NEXTAUTH_URL)
+      const result = await signIn('google', { 
+        callbackUrl: '/dashboard/products/colonbroom',
+        redirect: true 
+      })
+      console.log('✅ Sign-in initiated:', result)
     } catch (error) {
-      console.error('Sign in error:', error)
+      console.error('❌ Sign in error:', error)
+      alert('Sign-in failed. Please check the console for details.')
     }
   }
 
