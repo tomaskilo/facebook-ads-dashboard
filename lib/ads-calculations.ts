@@ -664,6 +664,17 @@ export class AdsCalculator {
   }
 
   /**
+   * Clear ALL caches - use when database is reset or data is erased
+   */
+  clearAllCaches() {
+    console.log(`🧹 Clearing ALL caches (${this.dataCache.size} data entries, ${this.queryCache.size} query entries)`)
+    this.dataCache.clear()
+    this.queryCache.clear()
+    this.resetPerformanceMetrics()
+    console.log(`✅ All caches cleared successfully`)
+  }
+
+  /**
    * LEGACY COMPATIBILITY: Individual stat methods
    */
   async getProductStats(tableName: string, productName: string) {
